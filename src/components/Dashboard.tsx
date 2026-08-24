@@ -52,45 +52,43 @@ export default function Dashboard({ slots, overrides }: Props) {
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
 
   // SDCP miss budget: how many 1hr SDCP classes can I miss before OVERALL drops to 80%?
+  // Also computes: what's the overall if I attend all remaining vs skip all SDCP?
   const sdcpBudget = useMemo(() => {
-    const sdcpSlots = slots.filter(s => s.slot.subjectCode === 'SDCP' && s.slot.isActivity)
-    const courseSlots = slots.filter(s => !s.slot.isActivity)
-
-    // Courses-only present/total (the baseline we're protecting)
-    let coursePresent = 0, courseTotal = 0
-    for (const sd of courseSlots) {
-      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
-      const present = sd.sessions.filter(s => s.status === 'PRESENT')
-      coursePresent += present.reduce((sum, s) => sum + s.hours, 0)
-      courseTotal += conducted.reduce((sum, s) => sum + s.hours, 0)
-    }
-
-    // SDCP present/conducted/remaining
+    // Totals across ALL slots (courses + activities)
+    let allPresent = 0, allConducted = 0, allRemaining = 0
     let sdcpPresent = 0, sdcpConducted = 0, sdcpRemaining = 0
-    for (const sd of sdcpSlots) {
-      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+    for (const sd of slots) {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
+      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
       const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
-      sdcpPresent += present.reduce((sum, s) => sum + s.hours, 0)
-      sdcpConducted += conducted.reduce((sum, s) => sum + s.hours, 0)
-      sdcpRemaining += future.reduce((sum, s) => sum + s.hours, 0)
+      const p = present.reduce((sum, s) => sum + s.hours, 0)
+      const c = conducted.reduce((sum, s) => sum + s.hours, 0)
+      const f = future.reduce((sum, s) => sum + s.hours, 0)
+      allPresent += p; allConducted += c; allRemaining += f
+      if (sd.slot.subjectCode === 'SDCP' && sd.slot.isActivity) {
+        sdcpPresent += p; sdcpConducted += c; sdcpRemaining += f
+      }
     }
 
     if (sdcpConducted === 0 && sdcpRemaining === 0) return null
 
     // Max SDCP hours can miss before overall hits 80%
-    const maxMissHours = coursePresent + sdcpPresent + sdcpRemaining - 0.8 * (courseTotal + sdcpConducted + sdcpRemaining)
+    const maxMissHours = allPresent + allRemaining - 0.8 * (allConducted + allRemaining)
     const maxMissClasses = Math.max(0, Math.floor(maxMissHours))
 
-    // Overall if all SDCP remaining skipped (only past hours count)
-    const ifSkipAll = Math.round((coursePresent + sdcpPresent) / (courseTotal + sdcpConducted + sdcpRemaining) * 10000) / 100
+    // Overall if attend ALL remaining (courses + ECA + SDCP)
+    const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
+
+    // Overall if skip all remaining SDCP (attend all courses + ECA)
+    const ifSkipSdcp = Math.round((allPresent + allRemaining - sdcpRemaining) / (allConducted + allRemaining) * 10000) / 100
 
     return {
       sdcpPresent,
       sdcpTotal: sdcpConducted,
       sdcpRemaining,
       maxMissClasses,
-      ifSkipAll,
+      ifAttendAll,
+      ifSkipSdcp,
     }
   }, [slots, holidays])
 
@@ -179,8 +177,17 @@ export default function Dashboard({ slots, overrides }: Props) {
               <span className="font-medium">{sdcpBudget.sdcpRemaining}h</span>
             </div>
           </div>
-          <div className="mt-2 text-xs text-gray-400">
-            If skipped all remaining: overall {sdcpBudget.ifSkipAll}%
+          <div className="mt-3 text-sm">
+            <div>
+              <span className="text-gray-500">Attend all remaining: </span>
+              <span className="font-bold text-green-600">{sdcpBudget.ifAttendAll}%</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Skip all SDCP: </span>
+              <span className={`font-bold ${sdcpBudget.ifSkipSdcp < 80 ? 'text-red-600' : 'text-amber-600'}`}>
+                {sdcpBudget.ifSkipSdcp}%
+              </span>
+            </div>
           </div>
         </div>
       )}
