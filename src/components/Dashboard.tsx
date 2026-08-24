@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats, formatClasses, getZone, parseSessionDate } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, formatClasses, parseSessionDate } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -51,43 +51,53 @@ export default function Dashboard({ slots, overrides }: Props) {
 
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
 
-  // SDCP combined stats (1hr per class, not 2hr)
-  const sdcpStats = useMemo(() => {
-    const sdcpSlots = slots.filter(s => s.slot.subjectCode === 'SDCP')
-    if (sdcpSlots.length === 0) return null
+  // SDCP miss budget: how many 1hr SDCP classes can I miss before OVERALL drops to 80%?
+  // Assumes no other courses are missed.
+  const sdcpBudget = useMemo(() => {
+    const sdcpSlots = slots.filter(s => s.slot.subjectCode === 'SDCP' && s.slot.isActivity)
+    const courseSlots = slots.filter(s => !s.slot.isActivity)
 
-    let presentHours = 0
-    let totalHours = 0
-    let remainingHours = 0
-    let remainingSessions = 0
+    // Courses-only present/total (the baseline we're protecting)
+    let coursePresent = 0
+    let courseTotal = 0
+    for (const sd of courseSlots) {
+      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+      const present = sd.sessions.filter(s => s.status === 'PRESENT')
+      coursePresent += present.reduce((sum, s) => sum + s.hours, 0)
+      courseTotal += conducted.reduce((sum, s) => sum + s.hours, 0)
+    }
 
+    // SDCP present/conducted/remaining
+    let sdcpPresent = 0
+    let sdcpConducted = 0
+    let sdcpRemaining = 0
     for (const sd of sdcpSlots) {
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
-      const future = sd.sessions.filter(s => {
-        if (s.status !== 'UPCOMING') return false
-        return !holidays.has(parseSessionDate(s.date))
-      })
-
-      presentHours += present.reduce((sum, s) => sum + s.hours, 0)
-      totalHours += conducted.reduce((sum, s) => sum + s.hours, 0)
-      remainingHours += future.reduce((sum, s) => sum + s.hours, 0)
-      remainingSessions += future.length
+      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
+      sdcpPresent += present.reduce((sum, s) => sum + s.hours, 0)
+      sdcpConducted += conducted.reduce((sum, s) => sum + s.hours, 0)
+      sdcpRemaining += future.reduce((sum, s) => sum + s.hours, 0)
     }
 
-    const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
-    const maxMiss = presentHours + remainingHours - 0.8 * (totalHours + remainingHours)
-    const budgetHours = Math.max(0, maxMiss)
+    if (sdcpConducted === 0 && sdcpRemaining === 0) return null
+
+    // If all SDCP attended, overall = (coursePresent + sdcpPresent + sdcpRemaining) / (courseTotal + sdcpConducted + sdcpRemaining)
+    // If we miss x hours of SDCP: (coursePresent + sdcpPresent + (sdcpRemaining - x)) / (courseTotal + sdcpConducted + sdcpRemaining) >= 0.8
+    // Solve: x <= coursePresent + sdcpPresent + sdcpRemaining - 0.8 * (courseTotal + sdcpConducted + sdcpRemaining)
+    const maxMissHours = coursePresent + sdcpPresent + sdcpRemaining - 0.8 * (courseTotal + sdcpConducted + sdcpRemaining)
+    const maxMissClasses = Math.max(0, Math.floor(maxMissHours))
+
+    // What overall is if all SDCP attended
+    const overallIfAllAttended = Math.round((coursePresent + sdcpPresent + sdcpRemaining) / (courseTotal + sdcpConducted + sdcpRemaining) * 10000) / 100
 
     return {
-      presentHours,
-      totalHours,
-      percentage: Math.round(percentage * 100) / 100,
-      remainingHours,
-      budgetHours: Math.round(budgetHours * 100) / 100,
-      // SDCP is 1hr per class
-      budgetClasses: Math.floor(budgetHours / 1),
-      zone: getZone(percentage),
+      sdcpPresent,
+      sdcpTotal: sdcpConducted,
+      sdcpRemaining,
+      maxMissClasses,
+      maxMissHours: Math.round(maxMissHours * 100) / 100,
+      overallIfAllAttended,
     }
   }, [slots, holidays])
 
@@ -144,31 +154,32 @@ export default function Dashboard({ slots, overrides }: Props) {
       </div>
 
       {/* SDCP card */}
-      {sdcpStats && (
+      {sdcpBudget && (
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h2 className="text-sm font-medium text-gray-500 mb-3">SDCP (Skill Development — 1hr/class)</h2>
+          <h2 className="text-sm font-medium text-gray-500 mb-3">SDCP Classes (1hr each)</h2>
           <div className="flex items-end gap-4">
-            <span className={`text-3xl font-bold ${ZONE_TEXT[sdcpStats.zone]}`}>
-              {sdcpStats.percentage}%
-            </span>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${ZONE_COLORS[sdcpStats.zone]}`}>
-              {ZONE_LABELS[sdcpStats.zone]}
-            </span>
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
             <div>
-              <span className="text-gray-500">Attended: </span>
-              <span className="font-medium">{sdcpStats.presentHours}h / {sdcpStats.totalHours}h</span>
+              <span className={`text-4xl font-bold ${sdcpBudget.maxMissClasses <= 2 ? 'text-red-600' : sdcpBudget.maxMissClasses <= 4 ? 'text-amber-600' : 'text-green-600'}`}>
+                {sdcpBudget.maxMissClasses}
+              </span>
+              <span className="text-lg text-gray-400 ml-1">classes</span>
+            </div>
+          </div>
+          <div className="mt-2 text-sm text-gray-500">
+            you can miss before overall drops below 80%
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-4 text-xs text-gray-500">
+            <div>
+              <span>Attended: </span>
+              <span className="font-medium">{sdcpBudget.sdcpPresent}h / {sdcpBudget.sdcpTotal}h</span>
             </div>
             <div>
-              <span className="text-gray-500">Can miss: </span>
-              <span className={budgetColor(sdcpStats.budgetHours, sdcpStats.percentage)}>
-                {sdcpStats.budgetClasses} classes ({sdcpStats.budgetHours}h){budgetLabel(sdcpStats.budgetHours, sdcpStats.percentage)}
-              </span>
+              <span>Remaining: </span>
+              <span className="font-medium">{sdcpBudget.sdcpRemaining}h</span>
             </div>
           </div>
           <div className="mt-2 text-xs text-gray-400">
-            Assuming no other courses are missed
+            If you attend all remaining: overall {sdcpBudget.overallIfAllAttended}%
           </div>
         </div>
       )}
@@ -205,17 +216,13 @@ export default function Dashboard({ slots, overrides }: Props) {
       {/* Activities */}
       {activityStats.length > 0 && (
         <div>
-          <h2 className="text-sm font-medium text-gray-500 mb-3">Activities (not per-subject rule)</h2>
+          <h2 className="text-sm font-medium text-gray-500 mb-3">Activities</h2>
           <div className="grid gap-2">
-            {activityStats.map(({ slot: s, stats }) => {
-              const isSdcp = s.subjectCode === 'SDCP'
-              return (
-                <div key={s.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between text-sm">
-                  <span className="text-gray-700">{s.subjectCode} {isSdcp && <span className="text-xs text-gray-400">(1hr/class)</span>}</span>
-                  <span className={`font-medium ${ZONE_TEXT[stats.zone]}`}>{stats.percentage}% {isSdcp && <span className="text-xs text-gray-400">· miss {Math.floor(stats.budgetHours)}h</span>}</span>
-                </div>
-              )
-            })}
+            {activityStats.map(({ slot: s }) => (
+              <div key={s.id} className="bg-gray-50 rounded-lg p-3 text-sm text-gray-500">
+                {s.subjectCode} — {s.subjectName}
+              </div>
+            ))}
           </div>
         </div>
       )}
