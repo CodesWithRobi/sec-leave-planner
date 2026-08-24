@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats, formatClasses } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, formatClasses, getZone, parseSessionDate } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -50,7 +50,46 @@ export default function Dashboard({ slots, overrides }: Props) {
   }, [overrides])
 
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
-  const coursesOnly = useMemo(() => computeOverallStats(slots, holidays, true), [slots, holidays])
+
+  // SDCP combined stats (1hr per class, not 2hr)
+  const sdcpStats = useMemo(() => {
+    const sdcpSlots = slots.filter(s => s.slot.subjectCode === 'SDCP')
+    if (sdcpSlots.length === 0) return null
+
+    let presentHours = 0
+    let totalHours = 0
+    let remainingHours = 0
+    let remainingSessions = 0
+
+    for (const sd of sdcpSlots) {
+      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+      const present = sd.sessions.filter(s => s.status === 'PRESENT')
+      const future = sd.sessions.filter(s => {
+        if (s.status !== 'UPCOMING') return false
+        return !holidays.has(parseSessionDate(s.date))
+      })
+
+      presentHours += present.reduce((sum, s) => sum + s.hours, 0)
+      totalHours += conducted.reduce((sum, s) => sum + s.hours, 0)
+      remainingHours += future.reduce((sum, s) => sum + s.hours, 0)
+      remainingSessions += future.length
+    }
+
+    const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
+    const maxMiss = presentHours + remainingHours - 0.8 * (totalHours + remainingHours)
+    const budgetHours = Math.max(0, maxMiss)
+
+    return {
+      presentHours,
+      totalHours,
+      percentage: Math.round(percentage * 100) / 100,
+      remainingHours,
+      budgetHours: Math.round(budgetHours * 100) / 100,
+      // SDCP is 1hr per class
+      budgetClasses: Math.floor(budgetHours / 1),
+      zone: getZone(percentage),
+    }
+  }, [slots, holidays])
 
   const subjectStats = useMemo(() =>
     slots
@@ -104,24 +143,35 @@ export default function Dashboard({ slots, overrides }: Props) {
         </div>
       </div>
 
-      {/* Courses only */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-sm font-medium text-gray-500 mb-3">Courses Only (no activities)</h2>
-        <div className="flex items-end gap-4">
-          <span className={`text-3xl font-bold ${ZONE_TEXT[coursesOnly.zone]}`}>
-            {coursesOnly.percentage}%
-          </span>
-          <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${ZONE_COLORS[coursesOnly.zone]}`}>
-            {ZONE_LABELS[coursesOnly.zone]}
-          </span>
+      {/* SDCP card */}
+      {sdcpStats && (
+        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <h2 className="text-sm font-medium text-gray-500 mb-3">SDCP (Skill Development — 1hr/class)</h2>
+          <div className="flex items-end gap-4">
+            <span className={`text-3xl font-bold ${ZONE_TEXT[sdcpStats.zone]}`}>
+              {sdcpStats.percentage}%
+            </span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium text-white ${ZONE_COLORS[sdcpStats.zone]}`}>
+              {ZONE_LABELS[sdcpStats.zone]}
+            </span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-4 text-sm">
+            <div>
+              <span className="text-gray-500">Attended: </span>
+              <span className="font-medium">{sdcpStats.presentHours}h / {sdcpStats.totalHours}h</span>
+            </div>
+            <div>
+              <span className="text-gray-500">Can miss: </span>
+              <span className={budgetColor(sdcpStats.budgetHours, sdcpStats.percentage)}>
+                {sdcpStats.budgetClasses} classes ({sdcpStats.budgetHours}h){budgetLabel(sdcpStats.budgetHours, sdcpStats.percentage)}
+              </span>
+            </div>
+          </div>
+          <div className="mt-2 text-xs text-gray-400">
+            Assuming no other courses are missed
+          </div>
         </div>
-        <div className="mt-2 text-sm">
-          <span className="text-gray-500">Safe misses: </span>
-          <span className={budgetColor(coursesOnly.budgetHours, coursesOnly.percentage)}>
-            {formatClasses(coursesOnly.budgetHours)}{budgetLabel(coursesOnly.budgetHours, coursesOnly.percentage)}
-          </span>
-        </div>
-      </div>
+      )}
 
       {/* Subject cards */}
       <div>
@@ -157,12 +207,15 @@ export default function Dashboard({ slots, overrides }: Props) {
         <div>
           <h2 className="text-sm font-medium text-gray-500 mb-3">Activities (not per-subject rule)</h2>
           <div className="grid gap-2">
-            {activityStats.map(({ slot: s, stats }) => (
-              <div key={s.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between text-sm">
-                <span className="text-gray-700">{s.subjectCode}</span>
-                <span className={`font-medium ${ZONE_TEXT[stats.zone]}`}>{stats.percentage}%</span>
-              </div>
-            ))}
+            {activityStats.map(({ slot: s, stats }) => {
+              const isSdcp = s.subjectCode === 'SDCP'
+              return (
+                <div key={s.id} className="bg-gray-50 rounded-lg p-3 flex items-center justify-between text-sm">
+                  <span className="text-gray-700">{s.subjectCode} {isSdcp && <span className="text-xs text-gray-400">(1hr/class)</span>}</span>
+                  <span className={`font-medium ${ZONE_TEXT[stats.zone]}`}>{stats.percentage}% {isSdcp && <span className="text-xs text-gray-400">· miss {Math.floor(stats.budgetHours)}h</span>}</span>
+                </div>
+              )
+            })}
           </div>
         </div>
       )}
