@@ -88,14 +88,19 @@ const BOOKMARKLET_RAW = `
     slots: slots
   };
 
-  // 6. Copy to clipboard
-  const json = JSON.stringify(data, null, 2);
-  await navigator.clipboard.writeText(json);
+  // 6. Inject textarea with JSON pre-selected for easy copy
+  var ta = document.createElement('textarea');
+  ta.value = JSON.stringify(data, null, 2);
+  ta.style.cssText = 'position:fixed;top:10px;left:10px;width:90vw;height:80vh;z-index:999999;font-size:12px;padding:8px;border:2px solid #333;background:#fff;color:#000;';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
 
   alert(
     'Attendance exported!\\n\\n' +
-    'JSON copied to clipboard.\\n\\n' +
-    'Go to SEC Leave Planner -> Settings -> Paste JSON to import.'
+    'A text box with your JSON is on the page.\\n' +
+    'Press Ctrl+A then Ctrl+C to copy it.\\n\\n' +
+    'Then go to SEC Leave Planner -> Settings -> Paste JSON to import.'
   );
 })();
 `.trim()
@@ -178,7 +183,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">4.</span>
-            <span>JSON is copied to your clipboard</span>
+            <span>A text box appears with your JSON. Select all (Ctrl+A), copy (Ctrl+C)</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">5.</span>
