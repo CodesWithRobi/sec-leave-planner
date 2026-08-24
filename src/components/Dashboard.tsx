@@ -112,19 +112,27 @@ export default function Dashboard({ slots, overrides }: Props) {
     [slots, holidays]
   )
 
-  // Activity impact: what do they add to overall, and what if you skip them?
+  // Activity impact: what do they add to overall, and what if you skip all remaining?
   const activityImpact = useMemo(() => {
-    const courseSlots = slots.filter(s => !s.slot.isActivity)
     const actSlots = slots.filter(s => s.slot.isActivity)
 
-    let coursePresent = 0, courseTotal = 0
-    for (const sd of courseSlots) {
-      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+    // All slots (courses + activities)
+    let allPresent = 0, allConducted = 0, allRemaining = 0
+    for (const sd of slots) {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
-      coursePresent += present.reduce((sum, s) => sum + s.hours, 0)
-      courseTotal += conducted.reduce((sum, s) => sum + s.hours, 0)
+      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
+      allPresent += present.reduce((sum, s) => sum + s.hours, 0)
+      allConducted += conducted.reduce((sum, s) => sum + s.hours, 0)
+      allRemaining += future.reduce((sum, s) => sum + s.hours, 0)
     }
 
+    // If attend all remaining
+    const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
+    // If skip ALL remaining
+    const ifSkipAll = Math.round(allPresent / (allConducted + allRemaining) * 10000) / 100
+
+    // Per-activity detail
     const items = actSlots.map(sd => {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
@@ -135,13 +143,7 @@ export default function Dashboard({ slots, overrides }: Props) {
       return { slot: sd.slot, attended, total, remaining }
     })
 
-    const totalActAttended = items.reduce((sum, i) => sum + i.attended, 0)
-    const totalActRemaining = items.reduce((sum, i) => sum + i.remaining, 0)
-
-    const withAll = Math.round((coursePresent + totalActAttended + totalActRemaining) / (courseTotal + totalActAttended + totalActRemaining) * 10000) / 100
-    const withoutRemaining = Math.round((coursePresent + totalActAttended) / (courseTotal + totalActAttended) * 10000) / 100
-
-    return { items, withAll, withoutRemaining }
+    return { items, ifAttendAll, ifSkipAll }
   }, [slots, holidays])
 
   return (
@@ -241,15 +243,15 @@ export default function Dashboard({ slots, overrides }: Props) {
           <h2 className="text-sm font-medium text-gray-500 mb-1">Activities</h2>
           <p className="text-xs text-gray-400 mb-4">Not per-subject rule, but they feed the overall pool</p>
 
-          <div className="flex items-center gap-4 mb-4 text-sm">
-            <div>
-              <span className="text-gray-500">With all: </span>
-              <span className="font-semibold text-green-600">{activityImpact.withAll}%</span>
+          <div className="flex items-center gap-6 mb-4">
+            <div className="text-sm">
+              <span className="text-gray-500">Attend all remaining: </span>
+              <span className="font-bold text-green-600">{activityImpact.ifAttendAll}%</span>
             </div>
-            <div>
-              <span className="text-gray-500">Skip remaining: </span>
-              <span className={`font-semibold ${activityImpact.withoutRemaining < 80 ? 'text-red-600' : 'text-amber-600'}`}>
-                {activityImpact.withoutRemaining}%
+            <div className="text-sm">
+              <span className="text-gray-500">Skip ALL remaining: </span>
+              <span className={`font-bold ${activityImpact.ifSkipAll < 80 ? 'text-red-600' : 'text-amber-600'}`}>
+                {activityImpact.ifSkipAll}%
               </span>
             </div>
           </div>
