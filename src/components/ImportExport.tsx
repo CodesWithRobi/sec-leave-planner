@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import type { AttendanceData, DateOverride } from '../engine/types'
 
 interface Props {
@@ -82,26 +82,19 @@ const BOOKMARKLET_RAW = `
 
   // 5. Build final JSON
   const data = {
-    student: prompt('Enter your name or register number:') || 'Student',
+    student: prompt('Enter your register number:') || 'Student',
     termId: TERM_ID,
     fetchedAt: new Date().toISOString(),
     slots: slots
   };
 
-  // 6. Download as file
-  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = 'attendance-' + data.student + '.json';
-  a.click();
-
-  // 7. Copy to clipboard
-  await navigator.clipboard.writeText(JSON.stringify(data));
+  // 6. Copy to clipboard
+  const json = JSON.stringify(data, null, 2);
+  await navigator.clipboard.writeText(json);
 
   alert(
     'Attendance exported!\\n\\n' +
-    'File downloaded: ' + a.download + '\\n' +
-    'JSON also copied to clipboard.\\n\\n' +
+    'JSON copied to clipboard.\\n\\n' +
     'Go to SEC Leave Planner -> Settings -> Paste JSON to import.'
   );
 })();
@@ -116,28 +109,12 @@ const BOOKMARKLET_MINIFIED = 'javascript:void ' + BOOKMARKLET_RAW
   .trim()
 
 export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride }: Props) {
-  const fileRef = useRef<HTMLInputElement>(null)
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
   const [copied, setCopied] = useState(false)
   const [newHoliday, setNewHoliday] = useState('')
   const [newReason, setNewReason] = useState('')
   const [showCode, setShowCode] = useState(false)
-
-  const handleFile = (file: File) => {
-    setError('')
-    const reader = new FileReader()
-    reader.onload = () => {
-      try {
-        const data = JSON.parse(reader.result as string) as AttendanceData
-        if (!data.slots || !Array.isArray(data.slots)) throw new Error('Invalid format')
-        onImport(data)
-      } catch (e: any) {
-        setError(e.message || 'Failed to parse file')
-      }
-    }
-    reader.readAsText(file)
-  }
 
   const handlePaste = () => {
     setError('')
@@ -201,11 +178,11 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">4.</span>
-            <span>It downloads a JSON file and copies to clipboard</span>
+            <span>JSON is copied to your clipboard</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">5.</span>
-            <span>Come back here and paste or upload the file</span>
+            <span>Come back here and paste (Ctrl+V) into the box below</span>
           </div>
         </div>
 
@@ -245,38 +222,24 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         <textarea
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          placeholder='Paste the JSON from clipboard or file here...'
+          onPaste={e => {
+            const text = e.clipboardData.getData('text')
+            if (text) {
+              setPasteText(text)
+            }
+          }}
+          placeholder='Paste the JSON from clipboard here (Ctrl+V)...'
           className="w-full h-32 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
-        <button
-          onClick={handlePaste}
-          disabled={!pasteText.trim()}
-          className="mt-3 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          Import
-        </button>
-      </div>
-
-      {/* File upload */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-sm font-medium text-gray-500 mb-3">Upload JSON file</h2>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".json"
-          className="hidden"
-          onChange={e => {
-            const file = e.target.files?.[0]
-            if (file) handleFile(file)
-            e.target.value = ''
-          }}
-        />
-        <button
-          onClick={() => fileRef.current?.click()}
-          className="px-4 py-2 border border-gray-200 text-sm rounded-lg hover:bg-gray-50"
-        >
-          Choose file
-        </button>
+        <div className="flex gap-2 mt-3">
+          <button
+            onClick={handlePaste}
+            disabled={!pasteText.trim()}
+            className="px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            Import
+          </button>
+        </div>
       </div>
 
       {error && (

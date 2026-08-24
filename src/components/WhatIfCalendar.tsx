@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeLeaveImpact } from '../engine/attendance'
+import { computeLeaveImpact, formatClasses } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -11,12 +11,14 @@ interface Props {
 export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
   const [selectedStart, setSelectedStart] = useState<string>('')
   const [selectedEnd, setSelectedEnd] = useState<string>('')
+  const [excludeActivities, setExcludeActivities] = useState<boolean>(false)
 
   const impact = useMemo(() => {
     if (!selectedStart || !selectedEnd) return null
     if (selectedStart > selectedEnd) return null
-    return computeLeaveImpact(slots, holidays, selectedStart, selectedEnd, overrides)
-  }, [slots, holidays, selectedStart, selectedEnd, overrides])
+    const slotsToUse = excludeActivities ? slots.filter(s => !s.slot.isActivity) : slots
+    return computeLeaveImpact(slotsToUse, holidays, selectedStart, selectedEnd, overrides)
+  }, [slots, holidays, selectedStart, selectedEnd, overrides, excludeActivities])
 
   const zoneColors = {
     green: 'text-green-600 bg-green-50',
@@ -56,6 +58,20 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
         {selectedStart && selectedEnd && selectedStart > selectedEnd && (
           <p className="mt-2 text-xs text-red-500">End date must be after start date</p>
         )}
+
+        {/* Skip activities toggle */}
+        <div className="mt-4">
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={excludeActivities}
+              onChange={e => setExcludeActivities(e.target.checked)}
+              className="rounded border-gray-300"
+            />
+            <span className="text-sm text-gray-600">Skip all activities (assume ECA/SDCP are absent)</span>
+          </label>
+          <p className="text-xs text-gray-400 mt-1 ml-6">Removes activity hours from the overall pool</p>
+        </div>
       </div>
 
       {/* Impact results */}
@@ -66,7 +82,7 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-gray-500">Overall Impact</h3>
               <span className="text-xs text-gray-400">
-                {impact.daysCount} days, {impact.sessionsMissed} sessions, {impact.hoursMissed}h missed
+                {impact.daysCount} days · {impact.sessionsMissed} sessions · {formatClasses(impact.hoursMissed)} missed
               </span>
             </div>
             <div className="flex items-center gap-4">
@@ -97,16 +113,26 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
           {/* Per-subject breakdown */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h3 className="text-sm font-medium text-gray-500 mb-3">Per Subject</h3>
-            <div className="space-y-2">
+            <div className="space-y-3">
               {Object.entries(impact.perSubject).map(([code, data]) => (
-                <div key={code} className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0">
-                  <span className="text-sm font-medium">{code}</span>
-                  <div className="flex items-center gap-3">
-                    <span className="text-sm text-gray-400">{data.before}%</span>
-                    <span className="text-gray-300">&rarr;</span>
-                    <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
-                      {data.after}%
-                    </span>
+                <div key={code} className="py-2 border-b border-gray-50 last:border-0">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium">{code}</span>
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm text-gray-400">{data.before}%</span>
+                      <span className="text-gray-300">&rarr;</span>
+                      <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
+                        {data.after}%
+                      </span>
+                    </div>
+                  </div>
+                  <div className="mt-1 text-xs text-gray-500 ml-2">
+                    Missed: {formatClasses(data.missedHours)} · Remaining budget: {formatClasses(data.remainingBudget)}
+                    {data.after < 80 && (
+                      <span className={`ml-2 font-medium ${data.zone === 'red' ? 'text-red-600' : 'text-amber-600'}`}>
+                        {data.zone === 'red' ? '⚠ DETAINED' : '⚠ CONDONATION'}
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}

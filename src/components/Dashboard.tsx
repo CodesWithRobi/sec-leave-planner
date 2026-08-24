@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, formatClasses } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -9,14 +9,14 @@ interface Props {
 
 const ZONE_COLORS = {
   green: 'bg-green-500',
-  amber: 'bg-amber-500',
-  red: 'bg-red-500',
+  amber: 'amber-500',
+  red: 'red-500',
 }
 
 const ZONE_TEXT = {
   green: 'text-green-700',
-  amber: 'text-amber-700',
-  red: 'text-red-700',
+  amber: 'amber-700',
+  red: 'red-700',
 }
 
 const ZONE_LABELS = {
@@ -75,15 +75,15 @@ export default function Dashboard({ slots, overrides }: Props) {
         <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
           <div>
             <div className="text-gray-500">Present</div>
-            <div className="font-semibold">{overall.presentHours}h / {overall.totalHours}h</div>
+            <div className="font-semibold">{formatClasses(overall.presentHours)}</div>
           </div>
           <div>
             <div className="text-gray-500">Remaining</div>
-            <div className="font-semibold">{overall.remainingHours}h</div>
+            <div className="font-semibold">{formatClasses(overall.remainingHours)}</div>
           </div>
           <div>
             <div className="text-gray-500">Safe misses</div>
-            <div className="font-semibold text-green-600">{overall.budgetHours}h ({overall.budgetSessions} sessions)</div>
+            <div className="font-semibold text-green-600">{formatClasses(overall.budgetHours)}</div>
           </div>
         </div>
       </div>
@@ -100,7 +100,7 @@ export default function Dashboard({ slots, overrides }: Props) {
           </span>
         </div>
         <div className="mt-2 text-sm text-gray-500">
-          Safe misses: {coursesOnly.budgetHours}h ({coursesOnly.budgetSessions} sessions)
+          Safe misses: {formatClasses(coursesOnly.budgetHours)}
         </div>
       </div>
 
@@ -116,8 +116,8 @@ export default function Dashboard({ slots, overrides }: Props) {
               </div>
               <div className="flex items-center gap-3 ml-4">
                 <div className="text-right text-xs">
-                  <div className="text-gray-500">{stats.presentHours}/{stats.totalHours}h</div>
-                  <div className="text-green-600 font-medium">miss {stats.budgetHours}h</div>
+                  <div className="text-gray-500">{formatClasses(stats.presentHours)} / {formatClasses(stats.totalHours)}</div>
+                  <div className="text-green-600 font-medium">miss {formatClasses(stats.budgetHours)}</div>
                 </div>
                 <div className={`w-14 text-center`}>
                   <span className={`text-lg font-bold ${ZONE_TEXT[stats.zone]}`}>

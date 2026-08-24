@@ -1,32 +1,44 @@
-# React + TypeScript + Vite
+# SEC Leave Planner
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A static web app that helps Saveetha Engineering College students plan leaves by computing per-subject and overall attendance impact.
 
-Currently, two official plugins are available:
+## What it does
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Dashboard** — shows current attendance for all subjects and activities, color-coded by zone (green ≥80%, amber 75-80% condonation risk, red <75% detained)
+- **What-If** — pick a date range and see how leave affects every subject and overall. Shows remaining budget (how many more classes you can miss). Toggle to exclude activities from the pool.
+- **Trip Planner** — scans ahead to find the longest vacation windows, ranked by calendar days. Input RP leaves to see how exchanging them for full-present days changes the picture. Expand any window for per-subject breakdown.
+- **Import/Export** — bookmarklet copies your attendance JSON from learner.saveetha.in to clipboard. Paste it in and you're set.
 
-## React Compiler
+## How to use
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+1. Open [learner.saveetha.in/attendance](https://learner.saveetha.in/academics/calculate-my-attendance/) and log in
+2. Open browser console (F12 → Console)
+3. Paste the bookmarklet code (copy it from the Settings tab) and press Enter
+4. JSON is copied to your clipboard
+5. Come back here, paste (Ctrl+V) into the box, and hit Import
 
-## Expanding the Oxlint configuration
+## Rules it enforces
 
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
+- Per-subject AND overall must stay ≥80%
+- At course end, only medical OD can add percentage
+- Activities (ECA-, SDCP) don't count per-subject but DO count in overall pool
+- RP leaves cover the busiest school days first
 
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+## Built with
+
+- React + TypeScript + Tailwind CSS
+- Vite
+- Pure TypeScript engine (no dependencies for calculations)
+
+## Getting started
+
+```bash
+npm install
+npm run dev
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+## Running tests
+
+```bash
+npx vitest run
+```

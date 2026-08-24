@@ -75,7 +75,9 @@ export interface LeaveImpact {
   daysCount: number
   sessionsMissed: number
   hoursMissed: number
-  perSubject: Record<string, { before: number; after: number; zone: VerdictZone }>
+  rpLeavesUsed: number
+  rpCoveredDates: string[]   // ISO dates covered by RP leave
+  perSubject: Record<string, { before: number; after: number; zone: VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number }>
   overallBefore: number
   overallAfter: number
   overallZone: VerdictZone

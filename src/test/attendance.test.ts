@@ -5,6 +5,8 @@ import {
   computeOverallStats,
   computeLeaveImpact,
   findVacationWindows,
+  formatClasses,
+  parseSessionDate,
 } from '../engine/attendance'
 import type { SlotDetail, Session } from '../engine/types'
 
@@ -377,6 +379,22 @@ describe('computeLeaveImpact', () => {
     expect(impact.sessionsMissed).toBeGreaterThan(20)
     expect(impact.overallAfter).toBeLessThan(impact.overallBefore)
   })
+
+  it('RP leave reduces impact — 1 RP on Sep 3 reduces missed sessions', () => {
+    const withoutRp = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03', [], 0)
+    const withRp = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03', [], 1)
+    expect(withRp.rpLeavesUsed).toBe(1)
+    expect(withRp.rpCoveredDates.length).toBe(1)
+    expect(withRp.sessionsMissed).toBeLessThan(withoutRp.sessionsMissed)
+    expect(withRp.overallAfter).toBeGreaterThan(withoutRp.overallAfter)
+  })
+
+  it('RP leave picks highest-hour day first', () => {
+    // Aug 31 (Mon) has more classes than Sep 1 (Tue)
+    const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-01', [], 1)
+    expect(impact.rpLeavesUsed).toBe(1)
+    expect(impact.rpCoveredDates[0]).toBe('2026-08-31')
+  })
 })
 
 describe('findVacationWindows', () => {
@@ -396,5 +414,29 @@ describe('findVacationWindows', () => {
     if (sep4Window) {
       expect(sep4Window.freeDaysAfter).toBeGreaterThan(0) // weekend adjacent
     }
+  })
+})
+
+describe('parseSessionDate', () => {
+  it('parses "17 Jul 2026" to ISO', () => {
+    expect(parseSessionDate('17 Jul 2026')).toBe('2026-07-17')
+  })
+  it('parses "01 Jan 2026" to ISO', () => {
+    expect(parseSessionDate('01 Jan 2026')).toBe('2026-01-01')
+  })
+  it('passes through ISO dates', () => {
+    expect(parseSessionDate('2026-07-17')).toBe('2026-07-17')
+  })
+})
+
+describe('formatClasses', () => {
+  it('formats 4h as 2 classes', () => {
+    expect(formatClasses(4)).toBe('2 classes (4h)')
+  })
+  it('formats 6h as 3 classes', () => {
+    expect(formatClasses(6)).toBe('3 classes (6h)')
+  })
+  it('formats 5h as 2.5 classes', () => {
+    expect(formatClasses(5)).toBe('2.5 classes (5h)')
   })
 })
