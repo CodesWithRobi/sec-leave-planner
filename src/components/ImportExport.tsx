@@ -10,12 +10,119 @@ interface Props {
   onRemoveOverride: (date: string) => void
 }
 
+// The bookmarklet — formatted for readability, minified at runtime
+const BOOKMARKLET_RAW = `
+(async function() {
+  const TERM_ID = 8;
+
+  // 1. Fetch slot list
+  const slotsResp = await fetch('/academics/calculate-my-attendance/slots/?term_id=' + TERM_ID);
+  const slotsJson = await slotsResp.json();
+
+  const slots = [];
+
+  for (const sl of slotsJson.results) {
+    // 2. Fetch each slot's attendance page (HTML)
+    const pageResp = await fetch(
+      '/academics/calculate-my-attendance/?term_id=' + TERM_ID +
+      '&slot_id=' + sl.id + '&action=calculate'
+    );
+    const html = await pageResp.text();
+
+    // 3. Parse the HTML table
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const rows = [...doc.querySelectorAll('table tbody tr')];
+
+    const sessions = rows.map(row => {
+      const cells = [...row.querySelectorAll('td')].map(td => td.innerText.trim());
+      const timing = cells[2] || '';
+      return {
+        date: cells[0],       // "17 Jul 2026"
+        time: cells[1],       // "10:00 - 11:59"
+        timing: timing,       // "CLS10-12"
+        location: cells[3],   // "6731"
+        status: cells[4],     // "PRESENT" / "ABSENT" / "HOLIDAY" / "UPCOMING"
+        calculation: cells[5] // "Counts 2.00 as Present"
+      };
+    });
+
+    // 4. Compute hours from timing code
+    function calcHours(t) {
+      if (t.startsWith('MENTOR MEET')) return 1.5;
+      if (t.startsWith('SWH')) return 1;
+      const m = t.match(/CLS(\\d+)-(\\d+)/);
+      if (m) return parseInt(m[2]) - parseInt(m[1]);
+      return 2;
+    }
+
+    const present = sessions.filter(s => s.status === 'PRESENT');
+    const conducted = sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT');
+    const presentHours = present.reduce((sum, s) => sum + calcHours(s.timing), 0);
+    const totalHours = conducted.reduce((sum, s) => sum + calcHours(s.timing), 0);
+
+    slots.push({
+      slot: {
+        id: sl.id,
+        slotName: sl.slot_name,
+        subjectCode: sl.subject_code,
+        subjectName: sl.subject_name,
+        isActivity: sl.subject_code.startsWith('ECA') || sl.subject_code.startsWith('SDCP')
+      },
+      sessions: sessions.map(s => ({
+        ...s,
+        hours: calcHours(s.timing)
+      })),
+      stats: {
+        presentHours: presentHours,
+        totalHours: totalHours,
+        percentage: totalHours > 0 ? Math.round(presentHours / totalHours * 10000) / 100 : 100
+      }
+    });
+  }
+
+  // 5. Build final JSON
+  const data = {
+    student: prompt('Enter your name or register number:') || 'Student',
+    termId: TERM_ID,
+    fetchedAt: new Date().toISOString(),
+    slots: slots
+  };
+
+  // 6. Download as file
+  const blob = new Blob([JSON.stringify(data, null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'attendance-' + data.student + '.json';
+  a.click();
+
+  // 7. Copy to clipboard
+  await navigator.clipboard.writeText(JSON.stringify(data));
+
+  alert(
+    'Attendance exported!\\n\\n' +
+    'File downloaded: ' + a.download + '\\n' +
+    'JSON also copied to clipboard.\\n\\n' +
+    'Go to SEC Leave Planner -> Settings -> Paste JSON to import.'
+  );
+})();
+`.trim()
+
+// Minify for actual execution
+const BOOKMARKLET_MINIFIED = 'javascript:void ' + BOOKMARKLET_RAW
+  .replace(/\/\/.*$/gm, '')
+  .replace(/\/\*[\s\S]*?\*\//g, '')
+  .replace(/\n\s*/g, ' ')
+  .replace(/\s{2,}/g, ' ')
+  .trim()
+
 export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride }: Props) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
+  const [copied, setCopied] = useState(false)
   const [newHoliday, setNewHoliday] = useState('')
   const [newReason, setNewReason] = useState('')
+  const [showCode, setShowCode] = useState(false)
 
   const handleFile = (file: File) => {
     setError('')
@@ -44,6 +151,24 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
     }
   }
 
+  const copyBookmarklet = async () => {
+    try {
+      await navigator.clipboard.writeText(BOOKMARKLET_MINIFIED)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // fallback: select textarea
+      const ta = document.createElement('textarea')
+      ta.value = BOOKMARKLET_MINIFIED
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
+  }
+
   const addHoliday = () => {
     if (!newHoliday) return
     onAddOverride({
@@ -60,14 +185,57 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
       {/* Bookmarklet */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-sm font-medium text-gray-500 mb-3">Import from learner.saveetha.in</h2>
-        <p className="text-xs text-gray-500 mb-4">
-          Log into learner.saveetha.in, open browser console (F12), paste and run this bookmarklet:
-        </p>
-        <div className="bg-gray-50 rounded-lg p-3 text-xs font-mono text-gray-700 overflow-x-auto">
-          {BOOKMARKLET_CODE.slice(0, 120)}...
+
+        <div className="space-y-3 text-xs text-gray-600">
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">1.</span>
+            <span>Open <a href="https://learner.saveetha.in/academics/calculate-my-attendance/" target="_blank" className="text-blue-600 underline">learner.saveetha.in/attendance</a> and log in</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">2.</span>
+            <span>Open browser console (F12 → Console tab)</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">3.</span>
+            <span>Paste the code below and press Enter</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">4.</span>
+            <span>It downloads a JSON file and copies to clipboard</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">5.</span>
+            <span>Come back here and paste or upload the file</span>
+          </div>
         </div>
-        <p className="text-xs text-gray-400 mt-2">
-          It copies JSON to clipboard and downloads a file. Then paste or upload below.
+
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={copyBookmarklet}
+            className={`px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+              copied
+                ? 'bg-green-500 text-white'
+                : 'bg-gray-900 text-white hover:bg-gray-800'
+            }`}
+          >
+            {copied ? 'Copied!' : 'Copy bookmarklet code'}
+          </button>
+          <button
+            onClick={() => setShowCode(!showCode)}
+            className="px-4 py-2 text-sm rounded-lg border border-gray-200 hover:bg-gray-50"
+          >
+            {showCode ? 'Hide code' : 'Show code'}
+          </button>
+        </div>
+
+        {showCode && (
+          <pre className="mt-3 bg-gray-900 text-gray-100 rounded-lg p-4 text-[11px] leading-relaxed overflow-x-auto max-h-96 overflow-y-auto">
+            <code>{BOOKMARKLET_RAW}</code>
+          </pre>
+        )}
+
+        <p className="text-xs text-gray-400 mt-3">
+          Works only on learner.saveetha.in (same-origin). Fetches all 7 slots, parses tables, exports JSON.
         </p>
       </div>
 
@@ -77,7 +245,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         <textarea
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          placeholder='{"student":"23014011", "slots":[...]}'
+          placeholder='Paste the JSON from clipboard or file here...'
           className="w-full h-32 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
@@ -166,9 +334,9 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-sm font-medium text-gray-500 mb-3">Preloaded Holidays (Term 1)</h2>
         <div className="text-sm space-y-1">
-          <div>Aug 26 (Wed) &mdash; Milad-un-Nabi</div>
-          <div>Sep 4 (Fri) &mdash; Krishna Jayanthi</div>
-          <div>Sep 14 (Mon) &mdash; Vinayagar Chathurthi</div>
+          <div>Aug 26 (Wed) — Milad-un-Nabi</div>
+          <div>Sep 4 (Fri) — Krishna Jayanthi</div>
+          <div>Sep 14 (Mon) — Vinayagar Chathurthi</div>
         </div>
       </div>
 
@@ -186,5 +354,3 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
     </div>
   )
 }
-
-const BOOKMARKLET_CODE = `javascript:void fetch('/academics/calculate-my-attendance/slots/?term_id=8').then(r=>r.json()).then(async s=>{const slots=[];for(const sl of s.results){const p=new DOMParser();const d=await fetch('/academics/calculate-my-attendance/?term_id=8&slot_id='+sl.id+'&action=calculate').then(r=>r.text());const doc=p.parseFromString(d,'text/html');const rows=[...doc.querySelectorAll('table tbody tr')];const sessions=rows.map(r=>{const c=[...r.querySelectorAll('td')].map(t=>t.innerText.trim());return{date:c[0],time:c[1],timing:c[2],location:c[3],status:c[4],calculation:c[5]}});const present=sessions.filter(s=>s.status==='PRESENT').length;const total=sessions.filter(s=>['PRESENT','ABSENT'].includes(s.status)).length;slots.push({slot:{id:sl.id,slotName:sl.slot_name,subjectCode:sl.subject_code,subjectName:sl.subject_name},sessions,stats:{presentHours:present*2,totalHours:total*2,percentage:total?Math.round(present/total*10000)/100:0}})};const data={student:'23014011',termId:8,fetchedAt:new Date().toISOString(),slots};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='attendance.json';a.click();navigator.clipboard.writeText(JSON.stringify(data));alert('Attendance exported! JSON copied to clipboard and file downloaded.')})`
