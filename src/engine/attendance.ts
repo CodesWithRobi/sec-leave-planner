@@ -166,7 +166,7 @@ export function computeLeaveImpact(
   const d = new Date(startDate + 'T00:00:00')
   const end = new Date(endDate + 'T00:00:00')
   while (d <= end) {
-    leaveDates.add(d.toISOString().slice(0, 10))
+    leaveDates.add(toLocalISODate(d))
     d.setDate(d.getDate() + 1)
   }
 
@@ -179,7 +179,7 @@ export function computeLeaveImpact(
     for (const sd of adjusted) {
       for (const s of sd.sessions) {
         const isoDate = parseSessionDate(s.date)
-        if (leaveDates.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+        if (leaveDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
           dateHours.set(isoDate, (dateHours.get(isoDate) || 0) + s.hours)
         }
       }
@@ -203,10 +203,10 @@ export function computeLeaveImpact(
   for (const sd of adjusted) {
     const before = computeSlotStats(sd, holidays)
 
-    // Count sessions in leave window (excluding RP-covered dates)
+    // Count sessions in leave window (excluding RP-covered dates AND holidays)
     const missed = sd.sessions.filter(s => {
       const isoDate = parseSessionDate(s.date)
-      return leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) &&
+      return leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) &&
         (s.status === 'UPCOMING' || s.status === 'ABSENT' || s.status === 'PRESENT')
     })
 
@@ -215,9 +215,10 @@ export function computeLeaveImpact(
     sessionsMissed += missed.length
 
     // After: non-RP sessions become ABSENT, RP-covered stay as-is (counted present)
+    // Holiday dates are excluded — no class to miss
     const adjustedSessions = sd.sessions.map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
@@ -242,7 +243,7 @@ export function computeLeaveImpact(
     ...sd,
     sessions: applyOverrides(sd.sessions, overrides).map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
@@ -282,13 +283,13 @@ export function findVacationWindows(
   for (let startOffset = 0; startOffset < maxDays; startOffset++) {
     const start = new Date(today)
     start.setDate(start.getDate() + startOffset)
-    const startStr = start.toISOString().slice(0, 10)
+    const startStr = toLocalISODate(start)
 
     // Try windows of increasing length
     for (let length = 1; length <= maxDays - startOffset; length++) {
       const end = new Date(start)
       end.setDate(end.getDate() + length - 1)
-      const endStr = end.toISOString().slice(0, 10)
+      const endStr = toLocalISODate(end)
 
       const impact = computeLeaveImpact(
         slotDetails,
@@ -340,7 +341,7 @@ function countFreeDaysBefore(date: Date, holidays: Set<string>): number {
   let count = 0
   const d = new Date(date)
   d.setDate(d.getDate() - 1)
-  while (isWeekend(d) || holidays.has(d.toISOString().slice(0, 10))) {
+  while (isWeekend(d) || holidays.has(toLocalISODate(d))) {
     count++
     d.setDate(d.getDate() - 1)
     if (count > 30) break
@@ -352,7 +353,7 @@ function countFreeDaysAfter(date: Date, holidays: Set<string>): number {
   let count = 0
   const d = new Date(date)
   d.setDate(d.getDate() + 1)
-  while (isWeekend(d) || holidays.has(d.toISOString().slice(0, 10))) {
+  while (isWeekend(d) || holidays.has(toLocalISODate(d))) {
     count++
     d.setDate(d.getDate() + 1)
     if (count > 30) break
@@ -363,4 +364,12 @@ function countFreeDaysAfter(date: Date, holidays: Set<string>): number {
 function isWeekend(d: Date): boolean {
   const day = d.getDay()
   return day === 0 || day === 6
+}
+
+/** Convert a Date to local YYYY-MM-DD (avoids toISOString() UTC shift) */
+function toLocalISODate(d: Date): string {
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
 }
