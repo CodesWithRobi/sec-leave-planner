@@ -112,16 +112,6 @@ export default function Dashboard({ slots, overrides }: Props) {
     [slots, holidays]
   )
 
-  const activityStats = useMemo(() =>
-    slots
-      .filter(s => s.slot.isActivity)
-      .map(s => ({
-        ...s,
-        stats: computeSlotStats(s, holidays),
-      })),
-    [slots, holidays]
-  )
-
   // Activity impact: what do they add to overall, and what if you skip them?
   const activityImpact = useMemo(() => {
     const courseSlots = slots.filter(s => !s.slot.isActivity)
