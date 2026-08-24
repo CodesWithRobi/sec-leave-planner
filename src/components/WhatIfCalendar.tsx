@@ -21,6 +21,13 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
     return computeLeaveImpact(slotsToUse, holidays, selectedStart, selectedEnd, overrides, rpLeaves)
   }, [slots, holidays, selectedStart, selectedEnd, overrides, excludeActivities, rpLeaves])
 
+  // Map subject code → name for display
+  const subjectNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const sd of slots) map[sd.slot.subjectCode] = sd.slot.subjectName
+    return map
+  }, [slots])
+
   const zoneColors = {
     green: 'text-green-600 bg-green-50',
     amber: 'text-amber-600 bg-amber-50',
@@ -144,7 +151,12 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
                 return (
                   <div key={code} className="py-2 border-b border-gray-50 last:border-0">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{code}</span>
+                      <div>
+                        <span className="text-sm font-medium">{code}</span>
+                        {subjectNames[code] && (
+                          <span className="text-xs text-gray-400 ml-2">{subjectNames[code]}</span>
+                        )}
+                      </div>
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-400">{data.before}%</span>
                         <span className="text-gray-300">&rarr;</span>
