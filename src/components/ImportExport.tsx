@@ -81,8 +81,8 @@ const BOOKMARKLET_RAW = `
   }
 
   // 5. Build final JSON
-  const data = {
-    student: prompt('Enter your register number:') || 'Student',
+  var data = {
+    student: '23014011',
     termId: TERM_ID,
     fetchedAt: new Date().toISOString(),
     slots: slots
