@@ -52,14 +52,12 @@ export default function Dashboard({ slots, overrides }: Props) {
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
 
   // SDCP miss budget: how many 1hr SDCP classes can I miss before OVERALL drops to 80%?
-  // Assumes no other courses are missed.
   const sdcpBudget = useMemo(() => {
     const sdcpSlots = slots.filter(s => s.slot.subjectCode === 'SDCP' && s.slot.isActivity)
     const courseSlots = slots.filter(s => !s.slot.isActivity)
 
     // Courses-only present/total (the baseline we're protecting)
-    let coursePresent = 0
-    let courseTotal = 0
+    let coursePresent = 0, courseTotal = 0
     for (const sd of courseSlots) {
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
@@ -68,9 +66,7 @@ export default function Dashboard({ slots, overrides }: Props) {
     }
 
     // SDCP present/conducted/remaining
-    let sdcpPresent = 0
-    let sdcpConducted = 0
-    let sdcpRemaining = 0
+    let sdcpPresent = 0, sdcpConducted = 0, sdcpRemaining = 0
     for (const sd of sdcpSlots) {
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
@@ -82,22 +78,19 @@ export default function Dashboard({ slots, overrides }: Props) {
 
     if (sdcpConducted === 0 && sdcpRemaining === 0) return null
 
-    // If all SDCP attended, overall = (coursePresent + sdcpPresent + sdcpRemaining) / (courseTotal + sdcpConducted + sdcpRemaining)
-    // If we miss x hours of SDCP: (coursePresent + sdcpPresent + (sdcpRemaining - x)) / (courseTotal + sdcpConducted + sdcpRemaining) >= 0.8
-    // Solve: x <= coursePresent + sdcpPresent + sdcpRemaining - 0.8 * (courseTotal + sdcpConducted + sdcpRemaining)
+    // Max SDCP hours can miss before overall hits 80%
     const maxMissHours = coursePresent + sdcpPresent + sdcpRemaining - 0.8 * (courseTotal + sdcpConducted + sdcpRemaining)
     const maxMissClasses = Math.max(0, Math.floor(maxMissHours))
 
-    // What overall is if all SDCP attended
-    const overallIfAllAttended = Math.round((coursePresent + sdcpPresent + sdcpRemaining) / (courseTotal + sdcpConducted + sdcpRemaining) * 10000) / 100
+    // Overall if all SDCP remaining skipped (only past hours count)
+    const ifSkipAll = Math.round((coursePresent + sdcpPresent) / (courseTotal + sdcpConducted + sdcpRemaining) * 10000) / 100
 
     return {
       sdcpPresent,
       sdcpTotal: sdcpConducted,
       sdcpRemaining,
       maxMissClasses,
-      maxMissHours: Math.round(maxMissHours * 100) / 100,
-      overallIfAllAttended,
+      ifSkipAll,
     }
   }, [slots, holidays])
 
@@ -112,25 +105,9 @@ export default function Dashboard({ slots, overrides }: Props) {
     [slots, holidays]
   )
 
-  // Activity impact: what do they add to overall, and what if you skip all remaining?
+  // Activity impact: what do they add to overall?
   const activityImpact = useMemo(() => {
     const actSlots = slots.filter(s => s.slot.isActivity)
-
-    // All slots (courses + activities)
-    let allPresent = 0, allConducted = 0, allRemaining = 0
-    for (const sd of slots) {
-      const present = sd.sessions.filter(s => s.status === 'PRESENT')
-      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
-      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
-      allPresent += present.reduce((sum, s) => sum + s.hours, 0)
-      allConducted += conducted.reduce((sum, s) => sum + s.hours, 0)
-      allRemaining += future.reduce((sum, s) => sum + s.hours, 0)
-    }
-
-    // If attend all remaining
-    const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
-    // If skip ALL remaining
-    const ifSkipAll = Math.round(allPresent / (allConducted + allRemaining) * 10000) / 100
 
     // Per-activity detail
     const items = actSlots.map(sd => {
@@ -143,7 +120,7 @@ export default function Dashboard({ slots, overrides }: Props) {
       return { slot: sd.slot, attended, total, remaining }
     })
 
-    return { items, ifAttendAll, ifSkipAll }
+    return { items }
   }, [slots, holidays])
 
   return (
@@ -203,7 +180,7 @@ export default function Dashboard({ slots, overrides }: Props) {
             </div>
           </div>
           <div className="mt-2 text-xs text-gray-400">
-            If you attend all remaining: overall {sdcpBudget.overallIfAllAttended}%
+            If skipped all remaining: overall {sdcpBudget.ifSkipAll}%
           </div>
         </div>
       )}
@@ -242,19 +219,6 @@ export default function Dashboard({ slots, overrides }: Props) {
         <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
           <h2 className="text-sm font-medium text-gray-500 mb-1">Activities</h2>
           <p className="text-xs text-gray-400 mb-4">Not per-subject rule, but they feed the overall pool</p>
-
-          <div className="flex items-center gap-6 mb-4">
-            <div className="text-sm">
-              <span className="text-gray-500">Attend all remaining: </span>
-              <span className="font-bold text-green-600">{activityImpact.ifAttendAll}%</span>
-            </div>
-            <div className="text-sm">
-              <span className="text-gray-500">Skip ALL remaining: </span>
-              <span className={`font-bold ${activityImpact.ifSkipAll < 80 ? 'text-red-600' : 'text-amber-600'}`}>
-                {activityImpact.ifSkipAll}%
-              </span>
-            </div>
-          </div>
 
           <div className="grid gap-2">
             {activityImpact.items.map(i => (
