@@ -227,12 +227,6 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         <textarea
           value={pasteText}
           onChange={e => setPasteText(e.target.value)}
-          onPaste={e => {
-            const text = e.clipboardData.getData('text')
-            if (text) {
-              setPasteText(text)
-            }
-          }}
           placeholder='Paste the JSON from clipboard here (Ctrl+V)...'
           className="w-full h-32 border border-gray-200 rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
@@ -244,6 +238,14 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           >
             Import
           </button>
+          {pasteText && (
+            <button
+              onClick={() => { setPasteText(''); setError('') }}
+              className="px-4 py-2 border border-gray-200 text-sm rounded-lg hover:bg-gray-50"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 
