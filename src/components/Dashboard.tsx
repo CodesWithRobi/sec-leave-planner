@@ -25,15 +25,17 @@ const ZONE_LABELS = {
   red: 'Detained',
 }
 
-function budgetColor(hours: number): string {
-  if (hours < 0) return 'text-red-600 font-bold'
+function budgetColor(hours: number, percentage: number): string {
+  // Unrecoverable: budget is 0 and below 80% — even perfect attendance can't save you
+  if (hours <= 0 && percentage < 80) return 'text-red-600 font-bold'
   if (hours === 0) return 'text-red-600 font-bold'
   if (hours <= 2) return 'text-amber-600 font-medium'
   return 'text-green-600 font-medium'
 }
 
-function budgetIcon(hours: number): string {
-  if (hours < 0) return ' 💀'
+function budgetLabel(hours: number, percentage: number): string {
+  if (hours <= 0 && percentage < 80) return ' 💀'
+  if (hours <= 0) return ''
   return ''
 }
 
@@ -95,8 +97,8 @@ export default function Dashboard({ slots, overrides }: Props) {
           </div>
           <div>
             <div className="text-gray-500">Safe misses</div>
-            <div className={`font-semibold ${budgetColor(overall.budgetHours)}`}>
-              {formatClasses(overall.budgetHours)}{budgetIcon(overall.budgetHours)}
+            <div className={`font-semibold ${budgetColor(overall.budgetHours, overall.percentage)}`}>
+              {formatClasses(overall.budgetHours)}{budgetLabel(overall.budgetHours, overall.percentage)}
             </div>
           </div>
         </div>
@@ -115,8 +117,8 @@ export default function Dashboard({ slots, overrides }: Props) {
         </div>
         <div className="mt-2 text-sm">
           <span className="text-gray-500">Safe misses: </span>
-          <span className={budgetColor(coursesOnly.budgetHours)}>
-            {formatClasses(coursesOnly.budgetHours)}{budgetIcon(coursesOnly.budgetHours)}
+          <span className={budgetColor(coursesOnly.budgetHours, coursesOnly.percentage)}>
+            {formatClasses(coursesOnly.budgetHours)}{budgetLabel(coursesOnly.budgetHours, coursesOnly.percentage)}
           </span>
         </div>
       </div>
@@ -134,8 +136,8 @@ export default function Dashboard({ slots, overrides }: Props) {
               <div className="flex items-center gap-3 ml-4">
                 <div className="text-right text-xs">
                   <div className="text-gray-500">{formatClasses(stats.presentHours)} / {formatClasses(stats.totalHours)}</div>
-                  <div className={budgetColor(stats.budgetHours)}>
-                    miss {formatClasses(stats.budgetHours)}{budgetIcon(stats.budgetHours)}
+                  <div className={budgetColor(stats.budgetHours, stats.percentage)}>
+                    miss {formatClasses(stats.budgetHours)}{budgetLabel(stats.budgetHours, stats.percentage)}
                   </div>
                 </div>
                 <div className={`w-14 text-center`}>

@@ -12,13 +12,14 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
   const [selectedStart, setSelectedStart] = useState<string>('')
   const [selectedEnd, setSelectedEnd] = useState<string>('')
   const [excludeActivities, setExcludeActivities] = useState<boolean>(false)
+  const [rpLeaves, setRpLeaves] = useState<number>(0)
 
   const impact = useMemo(() => {
     if (!selectedStart || !selectedEnd) return null
     if (selectedStart > selectedEnd) return null
     const slotsToUse = excludeActivities ? slots.filter(s => !s.slot.isActivity) : slots
-    return computeLeaveImpact(slotsToUse, holidays, selectedStart, selectedEnd, overrides)
-  }, [slots, holidays, selectedStart, selectedEnd, overrides, excludeActivities])
+    return computeLeaveImpact(slotsToUse, holidays, selectedStart, selectedEnd, overrides, rpLeaves)
+  }, [slots, holidays, selectedStart, selectedEnd, overrides, excludeActivities, rpLeaves])
 
   const zoneColors = {
     green: 'text-green-600 bg-green-50',
@@ -59,8 +60,25 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
           <p className="mt-2 text-xs text-red-500">End date must be after start date</p>
         )}
 
-        {/* Skip activities toggle */}
-        <div className="mt-4">
+        <div className="mt-4 flex flex-col gap-3">
+          {/* RP leave */}
+          <div className="flex items-center gap-3">
+            <label className="text-sm text-gray-600">RP leaves</label>
+            <input
+              type="number"
+              min={0}
+              max={10}
+              value={rpLeaves}
+              onChange={e => setRpLeaves(Math.max(0, Number(e.target.value)))}
+              className="w-16 border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <span className="text-xs text-gray-400">days</span>
+            {rpLeaves > 0 && (
+              <span className="text-xs text-blue-600">covers busiest days first</span>
+            )}
+          </div>
+
+          {/* Skip activities toggle */}
           <label className="flex items-center gap-2 cursor-pointer">
             <input
               type="checkbox"
@@ -70,7 +88,6 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
             />
             <span className="text-sm text-gray-600">Skip all activities (assume ECA/SDCP are absent)</span>
           </label>
-          <p className="text-xs text-gray-400 mt-1 ml-6">Removes activity hours from the overall pool</p>
         </div>
       </div>
 
@@ -83,6 +100,7 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
               <h3 className="text-sm font-medium text-gray-500">Overall Impact</h3>
               <span className="text-xs text-gray-400">
                 {impact.daysCount} days · {impact.sessionsMissed} sessions · {formatClasses(impact.hoursMissed)} missed
+                {impact.rpLeavesUsed > 0 && <span className="text-blue-600 ml-1">· {impact.rpLeavesUsed} RP used</span>}
               </span>
             </div>
             <div className="flex items-center gap-4">
@@ -110,32 +128,44 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
             )}
           </div>
 
+          {/* RP-leave covered dates */}
+          {impact.rpLeavesUsed > 0 && (
+            <div className="bg-blue-50 rounded-xl p-4 text-xs text-blue-700">
+              RP-leave covers: {impact.rpCoveredDates.join(', ')}
+            </div>
+          )}
+
           {/* Per-subject breakdown */}
           <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
             <h3 className="text-sm font-medium text-gray-500 mb-3">Per Subject</h3>
             <div className="space-y-3">
-              {Object.entries(impact.perSubject).map(([code, data]) => (
-                <div key={code} className="py-2 border-b border-gray-50 last:border-0">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{code}</span>
-                    <div className="flex items-center gap-3">
-                      <span className="text-sm text-gray-400">{data.before}%</span>
-                      <span className="text-gray-300">&rarr;</span>
-                      <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
-                        {data.after}%
-                      </span>
+              {Object.entries(impact.perSubject).map(([code, data]) => {
+                const unrecoverable = data.remainingBudget <= 0 && data.after < 80
+                return (
+                  <div key={code} className="py-2 border-b border-gray-50 last:border-0">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium">{code}</span>
+                      <div className="flex items-center gap-3">
+                        <span className="text-sm text-gray-400">{data.before}%</span>
+                        <span className="text-gray-300">&rarr;</span>
+                        <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
+                          {data.after}%
+                        </span>
+                      </div>
+                    </div>
+                    <div className="mt-1 text-xs text-gray-500 ml-2">
+                      Missed: {formatClasses(data.missedHours)} · Remaining budget: {formatClasses(data.remainingBudget)}
+                      {unrecoverable ? (
+                        <span className="ml-2 font-bold text-red-600">💀 UNRECOVERABLE</span>
+                      ) : data.after < 80 && data.zone === 'red' ? (
+                        <span className="ml-2 font-medium text-red-600">⚠ DETAINED</span>
+                      ) : data.after < 80 ? (
+                        <span className="ml-2 font-medium text-amber-600">⚠ CONDONATION</span>
+                      ) : null}
                     </div>
                   </div>
-                  <div className="mt-1 text-xs text-gray-500 ml-2">
-                    Missed: {formatClasses(data.missedHours)} · Remaining budget: {formatClasses(data.remainingBudget)}
-                    {data.after < 80 && (
-                      <span className={`ml-2 font-medium ${data.zone === 'red' ? 'text-red-600' : 'text-amber-600'}`}>
-                        {data.zone === 'red' ? '⚠ DETAINED' : '⚠ CONDONATION'}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>
