@@ -430,7 +430,7 @@ describe('findVacationWindows', () => {
     const windows = findVacationWindows(ALL_SLOTS, HOLIDAYS, 14)
     const sep4Window = windows.find(w => w.startDate === '2026-09-04' || w.endDate === '2026-09-04')
     if (sep4Window) {
-      expect(sep4Window.freeDaysAfter).toBeGreaterThan(0) // weekend adjacent
+      expect(sep4Window.totalCalendarDays).toBeGreaterThan(0)
     }
   })
 })

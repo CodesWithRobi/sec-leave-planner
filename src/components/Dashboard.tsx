@@ -19,24 +19,13 @@ const ZONE_TEXT = {
   red: 'text-red-700',
 }
 
-const ZONE_LABELS = {
-  green: 'Safe',
-  amber: 'Condonation risk',
-  red: 'Detained',
-}
-
-function budgetColor(hours: number, percentage: number): string {
-  // Unrecoverable: budget is 0 and below 80% — even perfect attendance can't save you
-  if (hours <= 0 && percentage < 80) return 'text-red-600 font-bold'
-  if (hours === 0) return 'text-red-600 font-bold'
-  if (hours <= 2) return 'text-amber-600 font-medium'
-  return 'text-green-600 font-medium'
-}
-
-function budgetLabel(hours: number, percentage: number): string {
-  if (hours <= 0 && percentage < 80) return ' 💀'
-  if (hours <= 0) return ''
-  return ''
+function ProgressBar({ percentage }: { percentage: number }) {
+  const color = percentage >= 80 ? 'bg-green-500' : percentage >= 75 ? 'bg-amber-500' : 'bg-red-500'
+  return (
+    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mt-3">
+      <div className={`h-full ${color} rounded-full`} style={{ width: `${Math.min(percentage, 100)}%` }} />
+    </div>
+  )
 }
 
 export default function Dashboard({ slots, overrides }: Props) {
@@ -51,12 +40,16 @@ export default function Dashboard({ slots, overrides }: Props) {
 
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
 
-  // SDCP miss budget: how many 1hr SDCP classes can I miss before OVERALL drops to 80%?
-  // Also computes: what's the overall if I attend all remaining vs skip all SDCP?
-  const sdcpBudget = useMemo(() => {
-    // Totals across ALL slots (courses + activities)
+  // Overall safe misses: how many 2hr classes can miss before overall drops to 80%
+  const safeMisses = useMemo(() => {
+    const maxMissHours = overall.presentHours + overall.remainingHours - 0.8 * (overall.totalHours + overall.remainingHours)
+    return Math.max(0, Math.floor(maxMissHours / 2))
+  }, [overall])
+
+  // SDCP scenario analysis
+  const sdcpScenario = useMemo(() => {
     let allPresent = 0, allConducted = 0, allRemaining = 0
-    let sdcpPresent = 0, sdcpConducted = 0, sdcpRemaining = 0
+    let sdcpRemaining = 0
     for (const sd of slots) {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
@@ -66,30 +59,23 @@ export default function Dashboard({ slots, overrides }: Props) {
       const f = future.reduce((sum, s) => sum + s.hours, 0)
       allPresent += p; allConducted += c; allRemaining += f
       if (sd.slot.subjectCode === 'SDCP' && sd.slot.isActivity) {
-        sdcpPresent += p; sdcpConducted += c; sdcpRemaining += f
+        sdcpRemaining += f
       }
     }
 
-    if (sdcpConducted === 0 && sdcpRemaining === 0) return null
+    if (sdcpRemaining === 0) return null
 
     // Max SDCP hours can miss before overall hits 80%
     const maxMissHours = allPresent + allRemaining - 0.8 * (allConducted + allRemaining)
     const maxMissClasses = Math.max(0, Math.floor(maxMissHours))
 
-    // Overall if attend ALL remaining (courses + ECA + SDCP)
+    // Overall if attend ALL remaining
     const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
 
-    // Overall if skip all remaining SDCP (attend all courses + ECA)
+    // Overall if skip all remaining SDCP
     const ifSkipSdcp = Math.round((allPresent + allRemaining - sdcpRemaining) / (allConducted + allRemaining) * 10000) / 100
 
-    return {
-      sdcpPresent,
-      sdcpTotal: sdcpConducted,
-      sdcpRemaining,
-      maxMissClasses,
-      ifAttendAll,
-      ifSkipSdcp,
-    }
+    return { maxMissClasses, sdcpRemaining, ifAttendAll, ifSkipSdcp }
   }, [slots, holidays])
 
   const subjectStats = useMemo(() =>
@@ -103,139 +89,151 @@ export default function Dashboard({ slots, overrides }: Props) {
     [slots, holidays]
   )
 
-  // Activity impact: what do they add to overall?
-  const activityImpact = useMemo(() => {
-    const actSlots = slots.filter(s => s.slot.isActivity)
-
-    // Per-activity detail
-    const items = actSlots.map(sd => {
-      const present = sd.sessions.filter(s => s.status === 'PRESENT')
-      const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
-      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
-      const attended = present.reduce((sum, s) => sum + s.hours, 0)
-      const total = conducted.reduce((sum, s) => sum + s.hours, 0)
-      const remaining = future.reduce((sum, s) => sum + s.hours, 0)
-      return { slot: sd.slot, attended, total, remaining }
-    })
-
-    return { items }
-  }, [slots, holidays])
+  // Activity hours detail
+  const activityItems = useMemo(() =>
+    slots
+      .filter(s => s.slot.isActivity)
+      .map(sd => {
+        const present = sd.sessions.filter(s => s.status === 'PRESENT')
+        const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+        const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
+        return {
+          slot: sd.slot,
+          attended: present.reduce((sum, s) => sum + s.hours, 0),
+          total: conducted.reduce((sum, s) => sum + s.hours, 0),
+          remaining: future.reduce((sum, s) => sum + s.hours, 0),
+        }
+      }),
+    [slots, holidays]
+  )
 
   return (
-    <div className="space-y-6">
-      {/* Overall gauge */}
-      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-        <h2 className="text-sm font-medium text-gray-500 mb-3">Overall Attendance</h2>
-        <div className="flex items-end gap-4">
+    <div className="space-y-5">
+
+      {/* ── Overall Attendance ── */}
+      <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+        <div className="flex items-center justify-between mb-1">
+          <h2 className="text-sm font-medium text-gray-500">Overall Attendance</h2>
+          <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium text-white ${ZONE_COLORS[overall.zone]}`}>
+            {overall.zone === 'green' ? 'Safe' : overall.zone === 'amber' ? 'Condonation risk' : 'Detained'}
+          </span>
+        </div>
+
+        <div className="flex items-end gap-3">
           <span className={`text-5xl font-bold ${ZONE_TEXT[overall.zone]}`}>
             {overall.percentage}%
           </span>
-          <span className={`px-3 py-1 rounded-full text-sm font-medium text-white ${ZONE_COLORS[overall.zone]}`}>
-            {ZONE_LABELS[overall.zone]}
-          </span>
         </div>
-        <div className="mt-4 grid grid-cols-3 gap-4 text-sm">
-          <div>
-            <div className="text-gray-500">Present</div>
-            <div className="font-semibold">{formatClasses(overall.presentHours)}</div>
+
+        <ProgressBar percentage={overall.percentage} />
+
+        <div className="mt-4 grid grid-cols-3 gap-3">
+          <div className="bg-gray-50 rounded-xl p-3 text-center">
+            <div className="text-xs text-gray-500 mb-1">Attended</div>
+            <div className="font-bold text-sm">{formatClasses(overall.presentHours)}</div>
           </div>
-          <div>
-            <div className="text-gray-500">Remaining</div>
-            <div className="font-semibold">{formatClasses(overall.remainingHours)}</div>
+          <div className="bg-gray-50 rounded-xl p-3 text-center">
+            <div className="text-xs text-gray-500 mb-1">Left</div>
+            <div className="font-bold text-sm">{formatClasses(overall.remainingHours)}</div>
           </div>
-          <div>
-            <div className="text-gray-500">Safe misses</div>
-            <div className={`font-semibold ${budgetColor(overall.budgetHours, overall.percentage)}`}>
-              {formatClasses(overall.budgetHours)}{budgetLabel(overall.budgetHours, overall.percentage)}
+          <div className={`rounded-xl p-3 text-center ${overall.budgetHours > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
+            <div className="text-xs text-gray-500 mb-1">Can still miss</div>
+            <div className={`font-bold text-sm ${overall.budgetHours > 0 ? 'text-green-700' : 'text-red-700'}`}>
+              {safeMisses} classes
             </div>
           </div>
+        </div>
+
+        <div className="mt-3 text-xs text-gray-400 text-center">
+          You can miss {safeMisses} more classes and still stay at 80%
         </div>
       </div>
 
-      {/* SDCP card */}
-      {sdcpBudget && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-          <h2 className="text-sm font-medium text-gray-500 mb-3">SDCP Classes (1hr each)</h2>
-          <div className="flex items-end gap-4">
-            <div>
-              <span className={`text-4xl font-bold ${sdcpBudget.maxMissClasses <= 2 ? 'text-red-600' : sdcpBudget.maxMissClasses <= 4 ? 'text-amber-600' : 'text-green-600'}`}>
-                {sdcpBudget.maxMissClasses}
-              </span>
-              <span className="text-lg text-gray-400 ml-1">classes</span>
+      {/* ── SDCP ── */}
+      {sdcpScenario && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+          <h2 className="text-sm font-medium text-gray-500 mb-1">SDCP (1hr each)</h2>
+
+          <div className="flex items-end gap-3">
+            <span className={`text-4xl font-bold ${sdcpScenario.maxMissClasses <= 2 ? 'text-red-600' : sdcpScenario.maxMissClasses <= 4 ? 'text-amber-600' : 'text-green-600'}`}>
+              {sdcpScenario.maxMissClasses}
+            </span>
+            <span className="text-sm text-gray-400 mb-1">classes you can skip</span>
+          </div>
+          <div className="text-xs text-gray-400 mt-1">before your overall drops below 80%</div>
+
+          <div className="mt-4 grid grid-cols-2 gap-3">
+            <div className="bg-green-50 rounded-xl p-3 text-center border border-green-100">
+              <div className="text-xs text-green-600 mb-1">Attend all</div>
+              <div className="font-bold text-green-700">{sdcpScenario.ifAttendAll}%</div>
+            </div>
+            <div className={`rounded-xl p-3 text-center border ${sdcpScenario.ifSkipSdcp >= 80 ? 'bg-amber-50 border-amber-100' : 'bg-red-50 border-red-100'}`}>
+              <div className={`text-xs mb-1 ${sdcpScenario.ifSkipSdcp >= 80 ? 'text-amber-600' : 'text-red-600'}`}>Skip all SDCP</div>
+              <div className={`font-bold ${sdcpScenario.ifSkipSdcp >= 80 ? 'text-amber-700' : 'text-red-700'}`}>{sdcpScenario.ifSkipSdcp}%</div>
             </div>
           </div>
-          <div className="mt-2 text-sm text-gray-500">
-            you can miss before overall drops below 80%
-          </div>
-          <div className="mt-3 grid grid-cols-2 gap-4 text-xs text-gray-500">
-            <div>
-              <span>Attended: </span>
-              <span className="font-medium">{sdcpBudget.sdcpPresent}h / {sdcpBudget.sdcpTotal}h</span>
-            </div>
-            <div>
-              <span>Remaining: </span>
-              <span className="font-medium">{sdcpBudget.sdcpRemaining}h</span>
-            </div>
-          </div>
-          <div className="mt-3 text-sm">
-            <div>
-              <span className="text-gray-500">Attend all remaining: </span>
-              <span className="font-bold text-green-600">{sdcpBudget.ifAttendAll}%</span>
-            </div>
-            <div>
-              <span className="text-gray-500">Skip all SDCP: </span>
-              <span className={`font-bold ${sdcpBudget.ifSkipSdcp < 80 ? 'text-red-600' : 'text-amber-600'}`}>
-                {sdcpBudget.ifSkipSdcp}%
-              </span>
-            </div>
+
+          <div className="mt-3 text-xs text-gray-400 text-center">
+            If you ditch all {sdcpScenario.sdcpRemaining}h of remaining SDCP, overall becomes {sdcpScenario.ifSkipSdcp}%
           </div>
         </div>
       )}
 
-      {/* Subject cards */}
+      {/* ── Per Subject ── */}
       <div>
         <h2 className="text-sm font-medium text-gray-500 mb-3">Per Subject</h2>
-        <div className="grid gap-3">
-          {subjectStats.map(({ slot: s, stats }) => (
-            <div key={s.id} className="bg-white rounded-xl p-4 shadow-sm border border-gray-100 flex items-center justify-between">
-              <div className="flex-1 min-w-0">
-                <div className="font-medium text-sm truncate">{s.subjectCode}</div>
-                <div className="text-xs text-gray-500 truncate">{s.subjectName}</div>
-              </div>
-              <div className="flex items-center gap-3 ml-4">
-                <div className="text-right text-xs">
-                  <div className="text-gray-500">{formatClasses(stats.presentHours)} / {formatClasses(stats.totalHours)}</div>
-                  <div className={budgetColor(stats.budgetHours, stats.percentage)}>
-                    miss {formatClasses(stats.budgetHours)}{budgetLabel(stats.budgetHours, stats.percentage)}
+        <div className="grid gap-2.5">
+          {subjectStats.map(({ slot: s, stats }) => {
+            const sMisses = Math.max(0, Math.floor(stats.budgetHours / 2))
+            const isDanger = stats.percentage < 80
+            return (
+              <div key={s.id} className={`bg-white rounded-xl p-4 shadow-sm border ${isDanger ? 'border-red-200' : 'border-gray-100'}`}>
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="font-medium text-sm">{s.subjectCode}</span>
+                      {isDanger && <span className="text-[10px] bg-red-100 text-red-600 px-1.5 py-0.5 rounded-full font-medium">below 80%</span>}
+                    </div>
+                    <div className="text-xs text-gray-500 mt-0.5">{s.subjectName}</div>
+                  </div>
+                  <div className="flex items-center gap-3 ml-4">
+                    <div className="text-right">
+                      <span className={`text-lg font-bold ${ZONE_TEXT[stats.zone]}`}>{stats.percentage}%</span>
+                      <div className="text-[10px] text-gray-400">
+                        {formatClasses(stats.presentHours)} / {formatClasses(stats.totalHours)}
+                      </div>
+                    </div>
+                    <div className={`w-2 h-10 rounded-full ${ZONE_COLORS[stats.zone]}`} />
                   </div>
                 </div>
-                <div className={`w-14 text-center`}>
-                  <span className={`text-lg font-bold ${ZONE_TEXT[stats.zone]}`}>
-                    {stats.percentage}%
-                  </span>
+                <div className="mt-2">
+                  <ProgressBar percentage={stats.percentage} />
+                  <div className={`text-xs mt-1.5 ${isDanger ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
+                    {isDanger
+                      ? `At risk — only ${sMisses} classes left to miss`
+                      : `${sMisses} classes left to miss`}
+                  </div>
                 </div>
-                <div className={`w-2 h-8 rounded-full ${ZONE_COLORS[stats.zone]}`} />
               </div>
-            </div>
-          ))}
+            )
+          })}
         </div>
       </div>
 
-      {/* Activities */}
-      {activityImpact.items.length > 0 && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+      {/* ── Activities ── */}
+      {activityItems.length > 0 && (
+        <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
           <h2 className="text-sm font-medium text-gray-500 mb-1">Activities</h2>
-          <p className="text-xs text-gray-400 mb-4">Not per-subject rule, but they feed the overall pool</p>
-
+          <p className="text-xs text-gray-400 mb-3">These don't count per subject, but they boost your overall %</p>
           <div className="grid gap-2">
-            {activityImpact.items.map(i => (
-              <div key={i.slot.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2 text-sm">
+            {activityItems.map(i => (
+              <div key={i.slot.id} className="flex items-center justify-between bg-gray-50 rounded-lg px-3 py-2.5">
                 <div>
-                  <span className="text-gray-700 font-medium">{i.slot.subjectCode}</span>
+                  <span className="text-gray-700 font-medium text-sm">{i.slot.subjectCode}</span>
                   <span className="text-gray-400 ml-2 text-xs">{i.slot.subjectName}</span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  {i.attended}/{i.total}h · {i.remaining}h left
+                  {i.attended}/{i.total}h · {i.remaining > 0 ? `${i.remaining}h left` : 'done'}
                 </div>
               </div>
             ))}
