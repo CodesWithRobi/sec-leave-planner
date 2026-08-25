@@ -147,6 +147,7 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
             <h3 className="text-sm font-medium text-gray-500 mb-3">Per Subject</h3>
             <div className="space-y-3">
               {Object.entries(impact.perSubject).map(([code, data]) => {
+                const isActivity = code === 'SDCP' || code.startsWith('ECA')
                 const unrecoverable = data.remainingBudget <= 0 && data.after < 80
                 return (
                   <div key={code} className="py-2 border-b border-gray-50 last:border-0">
@@ -160,20 +161,31 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
                       <div className="flex items-center gap-3">
                         <span className="text-sm text-gray-400">{data.before}%</span>
                         <span className="text-gray-300">&rarr;</span>
-                        <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
-                          {data.after}%
-                        </span>
+                        {isActivity ? (
+                          <span className="text-sm font-bold px-2 py-0.5 rounded text-gray-500 bg-gray-50">
+                            {data.after}%
+                          </span>
+                        ) : (
+                          <span className={`text-sm font-bold px-2 py-0.5 rounded ${zoneColors[data.zone]}`}>
+                            {data.after}%
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="mt-1 text-xs text-gray-500 ml-2">
-                      Missed: {formatClasses(data.missedHours)} · Remaining budget: {formatClasses(data.remainingBudget)}
-                      {unrecoverable ? (
-                        <span className="ml-2 font-bold text-red-600">💀 UNRECOVERABLE</span>
-                      ) : data.after < 80 && data.zone === 'red' ? (
-                        <span className="ml-2 font-medium text-red-600">⚠ DETAINED</span>
-                      ) : data.after < 80 ? (
-                        <span className="ml-2 font-medium text-amber-600">⚠ CONDONATION</span>
-                      ) : null}
+                      Missed: {formatClasses(data.missedHours)}
+                      {!isActivity && (
+                        <> · Remaining budget: {formatClasses(data.remainingBudget)}</>
+                      )}
+                      {!isActivity && (
+                        unrecoverable ? (
+                          <span className="ml-2 font-bold text-red-600">💀 UNRECOVERABLE</span>
+                        ) : data.after < 80 && data.zone === 'red' ? (
+                          <span className="ml-2 font-medium text-red-600">⚠ DETAINED</span>
+                        ) : data.after < 80 ? (
+                          <span className="ml-2 font-medium text-amber-600">⚠ CONDONATION</span>
+                        ) : null
+                      )}
                     </div>
                   </div>
                 )
