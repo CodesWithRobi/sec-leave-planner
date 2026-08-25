@@ -173,23 +173,27 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         <div className="space-y-3 text-xs text-gray-600">
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">1.</span>
-            <span>Open <a href="https://learner.saveetha.in/academics/calculate-my-attendance/" target="_blank" className="text-blue-600 underline">learner.saveetha.in/attendance</a> and log in</span>
+            <span>Click <strong>"Copy bookmarklet code"</strong> below — this copies the export script to your clipboard</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">2.</span>
-            <span>Open browser console (F12 → Console tab)</span>
+            <span>Open <a href="https://learner.saveetha.in/academics/calculate-my-attendance/" target="_blank" className="text-blue-600 underline">learner.saveetha.in/attendance</a> and log in</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">3.</span>
-            <span>Paste the code below and press Enter. <strong>If Chrome shows "Allow pasting", type <code className="bg-gray-100 px-1 rounded">allow pasting</code> and press Enter first</strong></span>
+            <span>Open browser console (press <strong>F12</strong> → click <strong>Console</strong> tab)</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">4.</span>
-            <span>A text box appears with your JSON. Select all (Ctrl+A), copy (Ctrl+C)</span>
+            <span>Paste the code into the console and press <strong>Enter</strong>. <em className="text-gray-400">(If Chrome shows "Allow pasting", type <code className="bg-gray-100 px-1 rounded">allow pasting</code> and press Enter first)</em></span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">5.</span>
-            <span>Come back here and paste (Ctrl+V) into the box below</span>
+            <span>A text box appears on the page with your attendance data. Press <strong>Ctrl+A</strong> then <strong>Ctrl+C</strong> to copy it</span>
+          </div>
+          <div className="flex items-start gap-2">
+            <span className="font-bold text-gray-900">6.</span>
+            <span>Come back here and paste into the box below</span>
           </div>
         </div>
 
