@@ -100,7 +100,9 @@ const BOOKMARKLET_RAW = `
     'Attendance exported!\\n\\n' +
     'A text box with your JSON is on the page.\\n' +
     'Press Ctrl+A then Ctrl+C to copy it.\\n\\n' +
-    'Then go to SEC Leave Planner -> Settings -> Paste JSON to import.'
+    'Then go to SEC Leave Planner -> Settings -> Paste JSON to import.\\n\\n' +
+    'Tip: If Chrome shows "Allow pasting" when you try to paste code\\n' +
+    'in the console, type "allow pasting" and press Enter first.'
   );
 })();
 `.trim()
@@ -179,7 +181,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">3.</span>
-            <span>Paste the code below and press Enter</span>
+            <span>Paste the code below and press Enter. <strong>If Chrome shows "Allow pasting", type <code className="bg-gray-100 px-1 rounded">allow pasting</code> and press Enter first</strong></span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">4.</span>
