@@ -130,28 +130,39 @@ export default function TripPlanner({ slots, overrides, holidays }: Props) {
               {isExpanded && (
                 <div className="mt-4 space-y-2">
                   <div className="text-xs font-medium text-gray-500 mb-2">Per-subject impact</div>
-                  {Object.entries(w.perSubject).map(([code, data]) => (
-                    <div key={code} className="flex items-center justify-between py-1 text-xs">
-                      <span className="font-medium">{code}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-gray-400">{data.before}%</span>
-                        <span className="text-gray-300">&rarr;</span>
-                        <span className={`font-bold px-2 py-0.5 rounded ${
-                          data.zone === 'green' ? 'text-green-600 bg-green-50' :
-                          data.zone === 'amber' ? 'text-amber-600 bg-amber-50' :
-                          'text-red-600 bg-red-50'
-                        }`}>
-                          {data.after}%
-                        </span>
-                        <span className="text-gray-400 w-20 text-right">
-                          miss {formatClasses(data.missedHours)}
-                        </span>
-                        <span className="text-gray-400 w-28 text-right">
-                          budget {formatClasses(data.remainingBudget)}
-                        </span>
+                  {Object.entries(w.perSubject).map(([code, data]) => {
+                    const isActivity = code === 'SDCP' || code.startsWith('ECA')
+                    return (
+                      <div key={code} className="flex items-center justify-between py-1 text-xs">
+                        <span className="font-medium">{code}</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-gray-400">{data.before}%</span>
+                          <span className="text-gray-300">&rarr;</span>
+                          {isActivity ? (
+                            <span className="font-bold px-2 py-0.5 rounded text-gray-500 bg-gray-50">
+                              {data.after}%
+                            </span>
+                          ) : (
+                            <span className={`font-bold px-2 py-0.5 rounded ${
+                              data.zone === 'green' ? 'text-green-600 bg-green-50' :
+                              data.zone === 'amber' ? 'text-amber-600 bg-amber-50' :
+                              'text-red-600 bg-red-50'
+                            }`}>
+                              {data.after}%
+                            </span>
+                          )}
+                          <span className="text-gray-400 w-20 text-right">
+                            miss {formatClasses(data.missedHours)}
+                          </span>
+                          {!isActivity && (
+                            <span className="text-gray-400 w-28 text-right">
+                              budget {formatClasses(data.remainingBudget)}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    )
+                  })}
                 </div>
               )}
             </div>
