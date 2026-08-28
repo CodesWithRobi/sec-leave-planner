@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import { BOOKMARKLET_URL } from '../bookmarklet'
 import type { AttendanceData, DateOverride } from '../engine/types'
 
 interface Props {
@@ -10,16 +11,16 @@ interface Props {
   onRemoveOverride: (date: string) => void
 }
 
-// The bookmark is a TINY loader — it injects the real logic from /bookmarklet.js
-// on GitHub Pages. Small URL = no truncation/encoding issues, and logic updates
-// reach every user without re-dragging the bookmark.
-const BOOKMARKLET_SCRIPT = '(function(){var s=document.createElement("script");s.src="https://codeswithrobi.github.io/sec-leave-planner/bookmarklet.js?v=1";s.onerror=function(){alert("SEC Attendance: could not load script from GitHub Pages. Check your internet connection.");};document.body.appendChild(s);})();'
-
-// URL-encoded for maximum browser compatibility (see research: unencoded
-// bookmarklets fail silently on special characters in some browsers)
-const BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(BOOKMARKLET_SCRIPT)
-
 export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride }: Props) {
+  // React 19 blocks javascript: URLs as JSX href props (rewrites them to a
+  // thrown security error — which is exactly what got dragged to the user's
+  // bookmarks bar). So the href is injected directly into the DOM via
+  // setAttribute, outside React's prop system.
+  const bookmarkletRef = useRef<HTMLAnchorElement>(null)
+  useLayoutEffect(() => {
+    bookmarkletRef.current?.setAttribute('href', BOOKMARKLET_URL)
+  }, [])
+
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
   const [newHoliday, setNewHoliday] = useState('')
@@ -82,7 +83,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         {/* Draggable bookmarklet link */}
         <div className="mt-3 ml-6">
           <a
-            href={BOOKMARKLET_URL}
+            ref={bookmarkletRef}
             className="inline-block px-4 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 cursor-grab active:cursor-grabbing select-none"
             title="Drag me to your bookmarks bar"
             onClick={e => e.preventDefault()}
