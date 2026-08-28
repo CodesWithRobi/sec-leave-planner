@@ -10,15 +10,21 @@ interface Props {
   onRemoveOverride: (date: string) => void
 }
 
-// The bookmarklet as a javascript: URL — drag this to your bookmarks bar
-// Shows a visible textarea with the JSON pre-selected — user just Ctrl+C
-const BOOKMARKLET_URL = `javascript:void ` + `(function(){var T=8;function calcHours(t){if(t.startsWith("MENTOR MEET"))return 1.5;if(t.startsWith("SWH"))return 1;var m=t.match(/CLS(\\d+)-(\\d+)/);if(m)return parseInt(m[2])-parseInt(m[1]);return 2;}function showMsg(msg,color){var t=document.createElement("div");t.textContent=msg;t.style.cssText="position:fixed;top:20px;left:50%;transform:translateX(-50%);background:"+(color||"#16a34a")+";color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);white-space:nowrap;";document.body.appendChild(t);setTimeout(function(){t.remove()},8000);}showMsg("Fetching attendance data...","#2563eb");fetch("/academics/calculate-my-attendance/slots/?term_id="+T).then(function(r){return r.json()}).then(function(j){var promises=j.results.map(function(sl){return fetch("/academics/calculate-my-attendance/?term_id="+T+"&slot_id="+sl.id+"&action=calculate").then(function(r){return r.text()}).then(function(html){var d=new DOMParser().parseFromString(html,"text/html");var rows=[...d.querySelectorAll("table tbody tr")];var sess=rows.map(function(row){var c=[...row.querySelectorAll("td")].map(function(td){return td.innerText.trim()});return{date:c[0],time:c[1],timing:c[2]||"",location:c[3],status:c[4],calculation:c[5]}});var pr=sess.filter(function(x){return x.status==="PRESENT"});var cd=sess.filter(function(x){return x.status==="PRESENT"||x.status==="ABSENT"});return{slot:{id:sl.id,slotName:sl.slot_name,subjectCode:sl.subject_code,subjectName:sl.subject_name,isActivity:sl.subject_code.startsWith("ECA")||sl.subject_code.startsWith("SDCP")},sessions:sess.map(function(x){return Object.assign({},x,{hours:calcHours(x.timing)})}),stats:{presentHours:pr.reduce(function(a,x){return a+calcHours(x.timing)},0),totalHours:cd.reduce(function(a,x){return a+calcHours(x.timing)},0),percentage:0}};});return Promise.all(promises)}).then(function(s){var pf=document.body.innerText;var rm=pf.match(/Ref2:\\s*(\\d+)/);var st=rm?rm[1]:"unknown";var data={student:st,termId:T,fetchedAt:new Date().toISOString(),slots:s};var json=JSON.stringify(data,null,2);var ta=document.createElement("textarea");ta.value=json;ta.style.cssText="position:fixed;top:10px;left:10px;width:90vw;height:80vh;z-index:999999;font-size:12px;padding:8px;border:2px solid #333;background:#fff;color:#000;";document.body.appendChild(ta);ta.focus();ta.select();ta.setSelectionRange(0,json.length);showMsg(s.length+" subjects loaded. Select all (Ctrl+A) then copy (Ctrl+C).","#16a34a")}).catch(function(e){showMsg("Error: "+e.message,"#dc2626")})})()`
+// The bookmark is a TINY loader — it injects the real logic from /bookmarklet.js
+// on GitHub Pages. Small URL = no truncation/encoding issues, and logic updates
+// reach every user without re-dragging the bookmark.
+const BOOKMARKLET_SCRIPT = '(function(){var s=document.createElement("script");s.src="https://codeswithrobi.github.io/sec-leave-planner/bookmarklet.js?v=1";s.onerror=function(){alert("SEC Attendance: could not load script from GitHub Pages. Check your internet connection.");};document.body.appendChild(s);})();'
+
+// URL-encoded for maximum browser compatibility (see research: unencoded
+// bookmarklets fail silently on special characters in some browsers)
+const BOOKMARKLET_URL = 'javascript:' + encodeURIComponent(BOOKMARKLET_SCRIPT)
 
 export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride }: Props) {
   const [pasteText, setPasteText] = useState('')
   const [error, setError] = useState('')
   const [newHoliday, setNewHoliday] = useState('')
   const [newReason, setNewReason] = useState('')
+  const [urlCopied, setUrlCopied] = useState(false)
 
   const handlePaste = () => {
     setError('')
@@ -32,6 +38,16 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
       setPasteText('')
     } catch (e: any) {
       setError(e.message || 'Failed to parse JSON')
+    }
+  }
+
+  const copyUrl = async () => {
+    try {
+      await navigator.clipboard.writeText(BOOKMARKLET_URL)
+      setUrlCopied(true)
+      setTimeout(() => setUrlCopied(false), 2000)
+    } catch {
+      setError('Could not copy URL — select it manually below')
     }
   }
 
@@ -87,11 +103,36 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">5.</span>
-            <span>A text box appears with your data, already selected. Press <strong>Ctrl+C</strong> to copy</span>
+            <span>A <strong>green toast</strong> appears: "Copied to clipboard! Paste in SEC Leave Planner"</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">6.</span>
             <span>Come back here and paste (<strong>Ctrl+V</strong>) into the box below</span>
+          </div>
+          <div className="flex items-start gap-2 text-gray-500">
+            <span className="font-bold text-gray-900">Tip:</span>
+            <span>No toast? A red toast shows the error — tell us what it says. If a blue box opens instead, select all (Ctrl+A) and copy (Ctrl+C).</span>
+          </div>
+        </div>
+
+        {/* Manual setup for mobile / no bookmarks bar */}
+        <div className="mt-5 pt-4 border-t border-gray-100">
+          <p className="text-xs text-gray-500 mb-2">
+            Mobile or no bookmarks bar? Copy the bookmark URL, create any bookmark, then edit it and paste this as the URL:
+          </p>
+          <div className="flex gap-2 items-start">
+            <input
+              readOnly
+              value={BOOKMARKLET_URL}
+              onFocus={e => e.target.select()}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-xs font-mono text-gray-500 bg-gray-50"
+            />
+            <button
+              onClick={copyUrl}
+              className="px-3 py-1.5 bg-gray-900 text-white text-xs rounded-lg hover:bg-gray-800 whitespace-nowrap"
+            >
+              {urlCopied ? 'Copied!' : 'Copy URL'}
+            </button>
           </div>
         </div>
       </div>
