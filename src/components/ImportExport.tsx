@@ -88,22 +88,23 @@ const BOOKMARKLET_RAW = `
     slots: slots
   };
 
-  // 6. Inject textarea with JSON pre-selected for easy copy
+  // 6. Copy to clipboard silently
+  var json = JSON.stringify(data, null, 2);
   var ta = document.createElement('textarea');
-  ta.value = JSON.stringify(data, null, 2);
-  ta.style.cssText = 'position:fixed;top:10px;left:10px;width:90vw;height:80vh;z-index:999999;font-size:12px;padding:8px;border:2px solid #333;background:#fff;color:#000;';
+  ta.value = json;
+  ta.style.cssText = 'position:fixed;left:-9999px;top:-9999px;';
   document.body.appendChild(ta);
   ta.select();
-  ta.setSelectionRange(0, ta.value.length);
+  ta.setSelectionRange(0, json.length);
+  document.execCommand('copy');
+  document.body.removeChild(ta);
 
-  alert(
-    'Attendance exported!\\n\\n' +
-    'A text box with your JSON is on the page.\\n' +
-    'Press Ctrl+A then Ctrl+C to copy it.\\n\\n' +
-    'Then go to SEC Leave Planner -> Settings -> Paste JSON to import.\\n\\n' +
-    'Tip: If Chrome shows "Allow pasting" when you try to paste code\\n' +
-    'in the console, type "allow pasting" and press Enter first.'
-  );
+  // 7. Show toast notification
+  var toast = document.createElement('div');
+  toast.textContent = 'Attendance copied to clipboard! Paste it in SEC Leave Planner.';
+  toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:#16a34a;color:#fff;padding:12px 24px;border-radius:8px;font-size:14px;font-weight:600;z-index:999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);';
+  document.body.appendChild(toast);
+  setTimeout(function() { toast.remove(); }, 4000);
 })();
 `.trim()
 
@@ -189,11 +190,11 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">5.</span>
-            <span>A text box appears on the page with your attendance data. Press <strong>Ctrl+A</strong> then <strong>Ctrl+C</strong> to copy it</span>
+            <span>A green toast appears: <strong>"Attendance copied to clipboard!"</strong> — your data is now on the clipboard</span>
           </div>
           <div className="flex items-start gap-2">
             <span className="font-bold text-gray-900">6.</span>
-            <span>Come back here and paste into the box below</span>
+            <span>Come back here and paste (<strong>Ctrl+V</strong>) into the box below</span>
           </div>
         </div>
 
