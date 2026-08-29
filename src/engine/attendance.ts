@@ -1,4 +1,4 @@
-import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, VacationWindow } from './types'
+import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, VacationWindow } from './types'
 
 // Zone thresholds
 const GREEN_THRESHOLD = 80
@@ -144,14 +144,48 @@ export function applyOverrides(sessions: Session[], overrides: DateOverride[]): 
   })
 }
 
-/** Compute impact of a leave window on all subjects + overall.
- *  rpLeaves: number of RP-leave days available — those school days
- *  become PRESENT for ALL subjects (applied to highest-hour days first). */
-export function computeLeaveImpact(
+/** Union of ISO dates covered by a set of leave ranges (overlaps deduped). */
+function collectLeaveDates(ranges: LeaveRange[]): Set<string> {
+  const dates = new Set<string>()
+  for (const range of ranges) {
+    if (!range.startDate || !range.endDate) continue
+    const d = new Date(range.startDate + 'T00:00:00')
+    const end = new Date(range.endDate + 'T00:00:00')
+    while (d <= end) {
+      dates.add(toLocalISODate(d))
+      d.setDate(d.getDate() + 1)
+    }
+  }
+  return dates
+}
+
+function unionBounds(ranges: LeaveRange[]): { startDate: string; endDate: string } {
+  let startDate = ''
+  let endDate = ''
+  for (const r of ranges) {
+    if (r.startDate && (!startDate || r.startDate < startDate)) startDate = r.startDate
+    if (r.endDate && (!endDate || r.endDate > endDate)) endDate = r.endDate
+  }
+  return { startDate, endDate }
+}
+
+/** Compute impact of a leave PLAN (one or more from-to ranges) on all subjects + overall.
+ *
+ *  Semantics:
+ *  - Only UPCOMING sessions inside the plan are treated as missed. Already-attended
+ *    (PRESENT) days are NOT retroactively cancelled — a range overlapping past days
+ *    costs nothing. Already-ABSENT sessions are untouched and not double-counted.
+ *  - overallAfter  = attendance if the term ended today (no future classes) — secondary.
+ *  - overallFinal  = projected attendance assuming EVERY future session outside the
+ *    plan is attended — the main number:
+ *        (presentHours + remainingHoursAfterLeave) / (conductedHours + remainingHoursAfterLeave)
+ *
+ *  rpLeaves: number of RP-leave days available — those school days become PRESENT for
+ *  ALL subjects (applied to the highest-hour upcoming days first). */
+export function computeLeavePlanImpact(
   slotDetails: SlotDetail[],
   holidays: Set<string>,
-  startDate: string,
-  endDate: string,
+  ranges: LeaveRange[],
   overrides: DateOverride[] = [],
   rpLeaves: number = 0,
 ): LeaveImpact {
@@ -161,30 +195,24 @@ export function computeLeaveImpact(
     sessions: applyOverrides(sd.sessions, overrides),
   }))
 
-  // Sessions in the leave window (convert to ISO for comparison)
-  const leaveDates = new Set<string>()
-  const d = new Date(startDate + 'T00:00:00')
-  const end = new Date(endDate + 'T00:00:00')
-  while (d <= end) {
-    leaveDates.add(toLocalISODate(d))
-    d.setDate(d.getDate() + 1)
-  }
+  // Union of all leave dates in the plan (overlaps deduped)
+  const leaveDates = collectLeaveDates(ranges)
+  const bounds = unionBounds(ranges)
 
-  // Determine which dates get RP-leave coverage (highest total hours first)
+  // Determine which dates get RP-leave coverage (highest total upcoming hours first)
   const rpCoveredDates = new Set<string>()
   let rpUsed = 0
   if (rpLeaves > 0) {
-    // Count total hours across ALL slots per leave-window date
     const dateHours = new Map<string, number>()
     for (const sd of adjusted) {
       for (const s of sd.sessions) {
         const isoDate = parseSessionDate(s.date)
-        if (leaveDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+        // Only upcoming classes can be covered — a leave affects only future days
+        if (leaveDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
           dateHours.set(isoDate, (dateHours.get(isoDate) || 0) + s.hours)
         }
       }
     }
-    // Sort descending by hours — RP-leave covers the most packed days first
     const sortedDates = [...dateHours.entries()].sort((a, b) => b[1] - a[1])
     for (const [date, _hours] of sortedDates) {
       if (rpUsed >= rpLeaves) break
@@ -203,22 +231,21 @@ export function computeLeaveImpact(
   for (const sd of adjusted) {
     const before = computeSlotStats(sd, holidays)
 
-    // Count sessions in leave window (excluding RP-covered dates AND holidays)
+    // Only UPCOMING sessions in the plan are missed (RP-covered + holidays excluded)
     const missed = sd.sessions.filter(s => {
       const isoDate = parseSessionDate(s.date)
       return leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) &&
-        (s.status === 'UPCOMING' || s.status === 'ABSENT' || s.status === 'PRESENT')
+        s.status === 'UPCOMING'
     })
 
     const missedHours = missed.reduce((sum, s) => sum + s.hours, 0)
     hoursMissed += missedHours
     sessionsMissed += missed.length
 
-    // After: non-RP sessions become ABSENT, RP-covered stay as-is (counted present)
-    // Holiday dates are excluded — no class to miss
+    // After: leave-marked upcoming sessions become ABSENT; PRESENT/ABSENT untouched
     const adjustedSessions = sd.sessions.map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
@@ -226,24 +253,22 @@ export function computeLeaveImpact(
 
     const afterStats = computeSlotStats({ ...sd, sessions: adjustedSessions }, holidays)
 
-    const remainingBudget = afterStats.budgetHours
-
     perSubject[sd.slot.subjectCode] = {
       before: before.percentage,
       after: afterStats.percentage,
       zone: afterStats.zone,
       missedHours,
       missedClasses: Math.round(missedHours / 2 * 10) / 10,
-      remainingBudget,
+      remainingBudget: afterStats.budgetHours,
     }
   }
 
-  // Overall after
+  // Overall after (term ended today) + projected final (attend everything else)
   const adjustedOverall = slotDetails.map(sd => ({
     ...sd,
     sessions: applyOverrides(sd.sessions, overrides).map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && (s.status === 'UPCOMING' || s.status === 'PRESENT')) {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
@@ -252,9 +277,21 @@ export function computeLeaveImpact(
 
   const afterOverall = computeOverallStats(adjustedOverall, holidays)
 
+  // Future hours still to be attended after the leave plan (holidays excluded already)
+  let remainingAfter = 0
+  for (const sd of adjustedOverall) {
+    remainingAfter += upcomingSessions(sd.sessions, holidays).reduce((sum, s) => sum + s.hours, 0)
+  }
+
+  const denominator = afterOverall.totalHours + remainingAfter
+  const overallFinal = denominator > 0
+    ? ((afterOverall.presentHours + remainingAfter) / denominator) * 100
+    : afterOverall.percentage
+
   return {
-    startDate,
-    endDate,
+    ranges: ranges.map(r => ({ ...r })),
+    startDate: bounds.startDate,
+    endDate: bounds.endDate,
     daysCount: leaveDates.size,
     sessionsMissed,
     hoursMissed,
@@ -263,8 +300,22 @@ export function computeLeaveImpact(
     perSubject,
     overallBefore: beforeOverall.percentage,
     overallAfter: afterOverall.percentage,
+    overallFinal: Math.round(overallFinal * 100) / 100,
     overallZone: afterOverall.zone,
+    overallFinalZone: getZone(overallFinal),
   }
+}
+
+/** Compute impact of a single leave window (wrapper around computeLeavePlanImpact). */
+export function computeLeaveImpact(
+  slotDetails: SlotDetail[],
+  holidays: Set<string>,
+  startDate: string,
+  endDate: string,
+  overrides: DateOverride[] = [],
+  rpLeaves: number = 0,
+): LeaveImpact {
+  return computeLeavePlanImpact(slotDetails, holidays, [{ id: 'window', startDate, endDate }], overrides, rpLeaves)
 }
 
 /** Find ranked vacation windows */
@@ -300,8 +351,8 @@ export function findVacationWindows(
         rpLeaves
       )
 
-      // Stop extending if overall drops below 75% (hard danger)
-      if (impact.overallZone === 'red') break
+      // Stop extending if projected overall drops below 75% (hard danger)
+      if (impact.overallFinalZone === 'red') break
 
       // Count free days before/after
       const freeBefore = countFreeDaysBefore(start, holidays)
@@ -326,11 +377,11 @@ export function findVacationWindows(
     }
   }
 
-  // Sort by total calendar days desc, then by overall margin desc
+  // Sort by total calendar days desc, then by projected margin desc
   const ranked = [...bestByStart.values()]
     .sort((a, b) =>
       b.totalCalendarDays - a.totalCalendarDays ||
-      (b.overallAfter - a.overallAfter)
+      (b.overallFinal - a.overallFinal)
     )
     .map((w, i) => ({ ...w, rank: i + 1 }))
 

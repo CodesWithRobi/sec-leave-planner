@@ -1,8 +1,15 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { SlotDetail, DateOverride, AttendanceData } from '../engine/types'
+import type { SlotDetail, DateOverride, AttendanceData, LeaveRange } from '../engine/types'
 
 const STORAGE_KEY = 'sec-leave-planner-data'
 const OVERRIDES_KEY = 'sec-leave-overrides'
+const LEAVE_PLAN_KEY = 'sec-leave-plan'
+
+function newRangeId(): string {
+  return typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : `r${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 export function useAttendanceStore() {
   const [slots, setSlots] = useState<SlotDetail[]>(() => {
@@ -19,6 +26,13 @@ export function useAttendanceStore() {
     } catch { return [] }
   })
 
+  const [leavePlan, setLeavePlan] = useState<LeaveRange[]>(() => {
+    try {
+      const raw = localStorage.getItem(LEAVE_PLAN_KEY)
+      return raw ? JSON.parse(raw) : []
+    } catch { return [] }
+  })
+
   const [student, setStudent] = useState<string>(() => {
     return localStorage.getItem('sec-leave-student') || ''
   })
@@ -30,6 +44,10 @@ export function useAttendanceStore() {
   useEffect(() => {
     localStorage.setItem(OVERRIDES_KEY, JSON.stringify(overrides))
   }, [overrides])
+
+  useEffect(() => {
+    localStorage.setItem(LEAVE_PLAN_KEY, JSON.stringify(leavePlan))
+  }, [leavePlan])
 
   useEffect(() => {
     localStorage.setItem('sec-leave-student', student)
@@ -51,22 +69,40 @@ export function useAttendanceStore() {
     setOverrides(prev => prev.filter(o => o.date !== date))
   }, [])
 
+  const addLeaveRange = useCallback((range: Omit<LeaveRange, 'id'>) => {
+    setLeavePlan(prev => [...prev, { ...range, id: newRangeId() }])
+  }, [])
+
+  const updateLeaveRange = useCallback((range: LeaveRange) => {
+    setLeavePlan(prev => prev.map(r => (r.id === range.id ? range : r)))
+  }, [])
+
+  const removeLeaveRange = useCallback((id: string) => {
+    setLeavePlan(prev => prev.filter(r => r.id !== id))
+  }, [])
+
   const clearAll = useCallback(() => {
     setSlots([])
     setOverrides([])
+    setLeavePlan([])
     setStudent('')
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(OVERRIDES_KEY)
+    localStorage.removeItem(LEAVE_PLAN_KEY)
     localStorage.removeItem('sec-leave-student')
   }, [])
 
   return {
     slots,
     overrides,
+    leavePlan,
     student,
     importData,
     addOverride,
     removeOverride,
+    addLeaveRange,
+    updateLeaveRange,
+    removeLeaveRange,
     clearAll,
     hasData: slots.length > 0,
   }

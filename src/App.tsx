@@ -56,8 +56,28 @@ export default function App() {
 
       <main className="max-w-lg mx-auto px-4 py-6 pb-24">
         {tab === 'dashboard' && <Dashboard slots={store.slots} overrides={store.overrides} />}
-        {tab === 'whatif' && <WhatIfCalendar slots={store.slots} overrides={store.overrides} holidays={holidays} />}
-        {tab === 'trip' && <TripPlanner slots={store.slots} overrides={store.overrides} holidays={holidays} />}
+        {tab === 'whatif' && (
+          <WhatIfCalendar
+            slots={store.slots}
+            overrides={store.overrides}
+            holidays={holidays}
+            plan={store.leavePlan}
+            onAddRange={store.addLeaveRange}
+            onUpdateRange={store.updateLeaveRange}
+            onRemoveRange={store.removeLeaveRange}
+          />
+        )}
+        {tab === 'trip' && (
+          <TripPlanner
+            slots={store.slots}
+            overrides={store.overrides}
+            holidays={holidays}
+            plan={store.leavePlan}
+            onAddRange={store.addLeaveRange}
+            onRemoveRange={store.removeLeaveRange}
+            onEditPlan={() => setTab('whatif')}
+          />
+        )}
         {tab === 'settings' && <ImportExport {...importExportProps} />}
       </main>
 

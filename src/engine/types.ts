@@ -68,8 +68,19 @@ export interface ComputedStats {
   zone: VerdictZone
 }
 
-/** Leave window result */
+/** One from-to leave range in a leave plan */
+export interface LeaveRange {
+  id: string
+  startDate: string   // "2026-09-03"
+  endDate: string     // "2026-09-05"
+}
+
+/** Leave window result.
+ *  overallAfter = attendance if the term ended today (secondary).
+ *  overallFinal = projected attendance if EVERY future session outside the
+ *  leave plan is attended (the main number). */
 export interface LeaveImpact {
+  ranges: LeaveRange[]
   startDate: string
   endDate: string
   daysCount: number
@@ -80,7 +91,9 @@ export interface LeaveImpact {
   perSubject: Record<string, { before: number; after: number; zone: VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number }>
   overallBefore: number
   overallAfter: number
+  overallFinal: number
   overallZone: VerdictZone
+  overallFinalZone: VerdictZone
 }
 
 /** Vacation window (ranked) */

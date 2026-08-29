@@ -4,283 +4,12 @@ import {
   computeSlotStats,
   computeOverallStats,
   computeLeaveImpact,
+  computeLeavePlanImpact,
   findVacationWindows,
   formatClasses,
   parseSessionDate,
 } from '../engine/attendance'
-import type { SlotDetail, Session } from '../engine/types'
-
-// Robinson's real data from learner.saveetha.in as of 2026-08-24
-// Term: 26-27-ODD-T1 (term_id=8)
-
-const makeSession = (
-  slotId: number,
-  date: string,
-  time: string,
-  status: 'PRESENT' | 'ABSENT' | 'HOLIDAY' | 'UPCOMING',
-  hours = 2
-): Session => ({
-  slotId,
-  date,
-  startTime: time.split(' - ')[0],
-  endTime: time.split(' - ')[1] || time.split(' - ')[0],
-  timing: '',
-  hours,
-  status,
-})
-
-const JAVA: SlotDetail = {
-  slot: {
-    id: 1565,
-    slotName: '26OD1238',
-    subjectCode: '19AI553',
-    subjectName: 'Advanced Java Web Applications',
-    isActivity: false,
-  },
-  sessions: [
-    makeSession(1565, '2026-07-17', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1565, '2026-07-18', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-07-21', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-07-24', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1565, '2026-07-25', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-07-28', '15:00 - 16:59', 'ABSENT'),
-    makeSession(1565, '2026-07-31', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1565, '2026-08-01', '15:00 - 16:59', 'ABSENT'),
-    makeSession(1565, '2026-08-04', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-08-07', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1565, '2026-08-08', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-08-11', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-08-14', '10:00 - 11:59', 'ABSENT'),
-    makeSession(1565, '2026-08-15', '15:00 - 16:59', 'HOLIDAY'),
-    makeSession(1565, '2026-08-18', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1565, '2026-08-21', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1565, '2026-08-22', '15:00 - 16:59', 'PRESENT'),
-    // Upcoming (after holidays removed)
-    makeSession(1565, '2026-08-25', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-08-28', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1565, '2026-08-29', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-01', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-04', '10:00 - 11:59', 'UPCOMING'), // holiday
-    makeSession(1565, '2026-09-05', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-08', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-11', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-12', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-15', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-18', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1565, '2026-09-19', '15:00 - 16:59', 'UPCOMING'),
-  ],
-  stats: { presentHours: 26, totalHours: 32, percentage: 81.25 },
-}
-
-const MA212: SlotDetail = {
-  slot: {
-    id: 1584,
-    slotName: '26OD1257',
-    subjectCode: '19MA212',
-    subjectName: 'Algebra and Number Theory',
-    isActivity: false,
-  },
-  sessions: [
-    makeSession(1584, '2026-07-17', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1584, '2026-07-18', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-07-20', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1584, '2026-07-22', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-07-24', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1584, '2026-07-25', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-07-27', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1584, '2026-07-29', '08:00 - 09:59', 'ABSENT'),
-    makeSession(1584, '2026-07-31', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1584, '2026-08-01', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-08-03', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1584, '2026-08-05', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-08-07', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1584, '2026-08-08', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-08-10', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1584, '2026-08-12', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-08-14', '13:00 - 14:59', 'ABSENT'),
-    makeSession(1584, '2026-08-15', '08:00 - 09:59', 'HOLIDAY'),
-    makeSession(1584, '2026-08-17', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1584, '2026-08-19', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1584, '2026-08-21', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1584, '2026-08-22', '08:00 - 09:59', 'ABSENT'),
-    // Upcoming
-    makeSession(1584, '2026-08-24', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1584, '2026-08-26', '08:00 - 09:59', 'UPCOMING'), // holiday
-    makeSession(1584, '2026-08-28', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1584, '2026-08-29', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-08-31', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-02', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-04', '13:00 - 14:59', 'UPCOMING'), // holiday
-    makeSession(1584, '2026-09-05', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-07', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-09', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-11', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-12', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-14', '10:00 - 11:59', 'UPCOMING'), // holiday
-    makeSession(1584, '2026-09-16', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-18', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1584, '2026-09-19', '08:00 - 09:59', 'UPCOMING'),
-  ],
-  stats: { presentHours: 36, totalHours: 42, percentage: 85.71 },
-}
-
-const HRM: SlotDetail = {
-  slot: {
-    id: 1672,
-    slotName: '26OD1345',
-    subjectCode: '19MS156',
-    subjectName: 'Human Resource Management and Team Building',
-    isActivity: false,
-  },
-  sessions: [
-    makeSession(1672, '2026-07-17', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-07-20', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-07-21', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1672, '2026-07-24', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-07-27', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-07-28', '10:00 - 11:59', 'ABSENT'),
-    makeSession(1672, '2026-07-31', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-08-03', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-08-04', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1672, '2026-08-07', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-08-10', '08:00 - 09:59', 'PRESENT'),
-    makeSession(1672, '2026-08-11', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1672, '2026-08-14', '08:00 - 09:59', 'ABSENT'),
-    makeSession(1672, '2026-08-17', '08:00 - 09:59', 'ABSENT'),
-    makeSession(1672, '2026-08-18', '10:00 - 11:59', 'PRESENT'),
-    makeSession(1672, '2026-08-21', '08:00 - 09:59', 'PRESENT'),
-    // Upcoming
-    makeSession(1672, '2026-08-24', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1672, '2026-08-25', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1672, '2026-08-28', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1672, '2026-08-31', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-01', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-04', '08:00 - 09:59', 'UPCOMING'), // holiday
-    makeSession(1672, '2026-09-07', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-08', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-11', '08:00 - 09:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-14', '08:00 - 09:59', 'UPCOMING'), // holiday
-    makeSession(1672, '2026-09-15', '10:00 - 11:59', 'UPCOMING'),
-    makeSession(1672, '2026-09-18', '08:00 - 09:59', 'UPCOMING'),
-  ],
-  stats: { presentHours: 26, totalHours: 32, percentage: 81.25 },
-}
-
-const AOA: SlotDetail = {
-  slot: {
-    id: 1792,
-    slotName: '26OD1465',
-    subjectCode: '19AI404',
-    subjectName: 'Analysis of Algorithms',
-    isActivity: false,
-  },
-  sessions: [
-    makeSession(1792, '2026-07-16', '15:00 - 16:59', 'ABSENT'),
-    makeSession(1792, '2026-07-17', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-20', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-21', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1792, '2026-07-23', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-24', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-27', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-28', '13:00 - 14:59', 'ABSENT'),
-    makeSession(1792, '2026-07-30', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-07-31', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-03', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-04', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1792, '2026-08-06', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-07', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-10', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-11', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1792, '2026-08-13', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-14', '15:00 - 16:59', 'ABSENT'),
-    makeSession(1792, '2026-08-17', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-18', '13:00 - 14:59', 'PRESENT'),
-    makeSession(1792, '2026-08-20', '15:00 - 16:59', 'PRESENT'),
-    makeSession(1792, '2026-08-21', '15:00 - 16:59', 'PRESENT'),
-    // Upcoming
-    makeSession(1792, '2026-08-24', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-08-25', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1792, '2026-08-27', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-08-28', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-08-31', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-01', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-03', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-04', '15:00 - 16:59', 'UPCOMING'), // holiday
-    makeSession(1792, '2026-09-07', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-08', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-10', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-11', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-14', '15:00 - 16:59', 'UPCOMING'), // holiday
-    makeSession(1792, '2026-09-15', '13:00 - 14:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-17', '15:00 - 16:59', 'UPCOMING'),
-    makeSession(1792, '2026-09-18', '15:00 - 16:59', 'UPCOMING'),
-  ],
-  stats: { presentHours: 38, totalHours: 44, percentage: 86.36 },
-}
-
-const MENTOR: SlotDetail = {
-  slot: {
-    id: 1993,
-    slotName: '26OD1M107',
-    subjectCode: 'ECA-SCOFT-M',
-    subjectName: 'SCOFT Mentor Meet',
-    isActivity: true,
-  },
-  sessions: [
-    makeSession(1993, '2026-07-22', '13:00 - 14:59', 'PRESENT', 2),
-    makeSession(1993, '2026-07-29', '13:00 - 14:59', 'ABSENT', 2),
-    makeSession(1993, '2026-08-05', '13:30 - 14:59', 'PRESENT', 1.5),
-    makeSession(1993, '2026-08-12', '13:30 - 14:59', 'PRESENT', 1.5),
-    makeSession(1993, '2026-08-19', '13:30 - 14:59', 'PRESENT', 1.5),
-  ],
-  stats: { presentHours: 6.5, totalHours: 8.5, percentage: 76.47 },
-}
-
-const SDCP1: SlotDetail = {
-  slot: {
-    id: 2142,
-    slotName: '26OD1SD047',
-    subjectCode: 'SDCP',
-    subjectName: 'Skill Development Course Practice',
-    isActivity: true,
-  },
-  sessions: [
-    makeSession(2142, '2026-08-06', '08:00 - 09:00', 'ABSENT', 1),
-    makeSession(2142, '2026-08-13', '08:00 - 09:00', 'PRESENT', 1),
-    makeSession(2142, '2026-08-20', '08:00 - 09:00', 'PRESENT', 1),
-    makeSession(2142, '2026-08-27', '08:00 - 09:00', 'UPCOMING', 1),
-    makeSession(2142, '2026-09-03', '08:00 - 09:00', 'UPCOMING', 1),
-    makeSession(2142, '2026-09-10', '08:00 - 09:00', 'UPCOMING', 1),
-    makeSession(2142, '2026-09-17', '08:00 - 09:00', 'UPCOMING', 1),
-    makeSession(2142, '2026-09-24', '08:00 - 09:00', 'UPCOMING', 1),
-  ],
-  stats: { presentHours: 2, totalHours: 3, percentage: 66.67 },
-}
-
-const SDCP2: SlotDetail = {
-  slot: {
-    id: 2211,
-    slotName: '26OD1SD116',
-    subjectCode: 'SDCP',
-    subjectName: 'Skill Development Course Practice',
-    isActivity: true,
-  },
-  sessions: [
-    makeSession(2211, '2026-08-06', '09:00 - 10:00', 'ABSENT', 1),
-    makeSession(2211, '2026-08-13', '09:00 - 10:00', 'PRESENT', 1),
-    makeSession(2211, '2026-08-20', '09:00 - 10:00', 'PRESENT', 1),
-    makeSession(2211, '2026-08-27', '09:00 - 10:00', 'UPCOMING', 1),
-    makeSession(2211, '2026-09-03', '09:00 - 10:00', 'UPCOMING', 1),
-    makeSession(2211, '2026-09-10', '09:00 - 10:00', 'UPCOMING', 1),
-    makeSession(2211, '2026-09-17', '09:00 - 10:00', 'UPCOMING', 1),
-    makeSession(2211, '2026-09-24', '09:00 - 10:00', 'UPCOMING', 1),
-  ],
-  stats: { presentHours: 2, totalHours: 3, percentage: 66.67 },
-}
-
-// Holidays from activity calendar (Term 1 window)
-const HOLIDAYS = new Set(['2026-08-26', '2026-09-04', '2026-09-14'])
-const ALL_SLOTS = [JAVA, MA212, HRM, AOA, MENTOR, SDCP1, SDCP2]
+import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
 
 describe('getZone', () => {
   it('green at 80%+', () => {
@@ -412,6 +141,84 @@ describe('computeLeaveImpact', () => {
     // School days: Aug 31(3), Sep 1(3), Sep 2(1), Sep 3(3), Sep 5(2) = 12 sessions
     const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-30', '2026-09-06')
     expect(impact.sessionsMissed).toBe(12)
+  })
+})
+
+describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
+  it('empty plan: overallFinal = attend-everything projection (higher than term-ended)', () => {
+    const impact = computeLeavePlanImpact(ALL_SLOTS, HOLIDAYS, [])
+    expect(impact.overallBefore).toBeCloseTo(82.98, 1)
+    expect(impact.overallAfter).toBe(impact.overallBefore) // nothing missed
+    // 136.5 present + 106 upcoming = 242.5 of 270.5 = 89.65%
+    expect(impact.overallFinal).toBeCloseTo(89.65, 1)
+    expect(impact.overallFinalZone).toBe('green')
+    expect(impact.sessionsMissed).toBe(0)
+  })
+
+  it('1-day leave (Sep 3): projected main number, term-ended secondary', () => {
+    const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03')
+    expect(impact.sessionsMissed).toBe(3)
+    expect(impact.hoursMissed).toBe(4) // AOA 2h + SDCP1 1h + SDCP2 1h
+    expect(impact.overallAfter).toBeCloseTo(81.01, 1)
+    expect(impact.overallFinal).toBeCloseTo(88.17, 1)
+    expect(impact.overallFinal).toBeGreaterThan(impact.overallAfter)
+    expect(impact.overallFinalZone).toBe('green')
+  })
+
+  it('projected final = formula: (present + remaining - missed)/(conducted + remaining)', () => {
+    const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-12')
+    // Cross-check against the closed form computed from the reported numbers:
+    // after = (P)/(C+L), final = (P + R - L)/(C + R), so final = after ratio + remaining scaling.
+    // Exact engine values: after 63.05, final 70.43
+    expect(impact.overallAfter).toBeCloseTo(63.05, 1)
+    expect(impact.overallFinal).toBeCloseTo(70.43, 1)
+    expect(impact.overallFinalZone).toBe('red')
+  })
+
+  it('PRESENT-flip fix: a range over already-attended days costs nothing', () => {
+    const past = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-07-30', '2026-08-05')
+    expect(past.sessionsMissed).toBe(0)
+    expect(past.hoursMissed).toBe(0)
+    expect(past.overallAfter).toBe(past.overallBefore)
+  })
+
+  it('mixed window: past days inside the range contribute zero missed sessions', () => {
+    const mixed = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-20', '2026-08-28')
+    const futureOnly = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-24', '2026-08-28')
+    expect(mixed.sessionsMissed).toBe(futureOnly.sessionsMissed)
+  })
+
+  it('stacked ranges union their missed sessions', () => {
+    const plan = computeLeavePlanImpact(ALL_SLOTS, HOLIDAYS, [
+      { id: 'a', startDate: '2026-08-31', endDate: '2026-09-01' },
+      { id: 'b', startDate: '2026-09-10', endDate: '2026-09-11' },
+    ])
+    const a = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-01')
+    const b = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-10', '2026-09-11')
+    expect(plan.sessionsMissed).toBe(a.sessionsMissed + b.sessionsMissed)
+    expect(plan.hoursMissed).toBe(a.hoursMissed + b.hoursMissed)
+    expect(plan.daysCount).toBe(a.daysCount + b.daysCount)
+    expect(plan.ranges.length).toBe(2)
+    expect(plan.startDate).toBe('2026-08-31')
+    expect(plan.endDate).toBe('2026-09-11')
+  })
+
+  it('overlapping ranges are deduped to the union', () => {
+    const overlap = computeLeavePlanImpact(ALL_SLOTS, HOLIDAYS, [
+      { id: 'a', startDate: '2026-08-31', endDate: '2026-09-02' },
+      { id: 'b', startDate: '2026-09-01', endDate: '2026-09-03' },
+    ])
+    const single = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-03')
+    expect(overlap.sessionsMissed).toBe(single.sessionsMissed)
+    expect(overlap.daysCount).toBe(single.daysCount)
+    expect(overlap.daysCount).toBe(4) // Aug 31, Sep 1, Sep 2, Sep 3
+  })
+
+  it('RP leave covers the leave day so it counts as attended', () => {
+    const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03', [], 1)
+    expect(impact.rpCoveredDates).toContain('2026-09-03')
+    expect(impact.sessionsMissed).toBe(0)
+    expect(impact.overallAfter).toBe(impact.overallBefore)
   })
 })
 

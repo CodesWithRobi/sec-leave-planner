@@ -1,25 +1,35 @@
-import { useState, useMemo } from 'react'
-import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeLeaveImpact, formatClasses } from '../engine/attendance'
+import { useMemo, useState } from 'react'
+import type { SlotDetail, DateOverride, LeaveRange } from '../engine/types'
+import { computeLeavePlanImpact, formatClasses } from '../engine/attendance'
+
+const MAX_PLAN_RANGES = 5
+const TERM_MIN = '2026-08-25'
+const TERM_MAX = '2026-09-19'
 
 interface Props {
   slots: SlotDetail[]
   overrides: DateOverride[]
   holidays: Set<string>
+  plan: LeaveRange[]
+  onAddRange: (range: Omit<LeaveRange, 'id'>) => void
+  onUpdateRange: (range: LeaveRange) => void
+  onRemoveRange: (id: string) => void
 }
 
-export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
-  const [selectedStart, setSelectedStart] = useState<string>('')
-  const [selectedEnd, setSelectedEnd] = useState<string>('')
+export default function WhatIfCalendar({ slots, overrides, holidays, plan, onAddRange, onUpdateRange, onRemoveRange }: Props) {
   const [excludeActivities, setExcludeActivities] = useState<boolean>(false)
   const [rpLeaves, setRpLeaves] = useState<number>(0)
 
+  const validRanges = useMemo(
+    () => plan.filter(r => r.startDate && r.endDate && r.startDate <= r.endDate),
+    [plan]
+  )
+
   const impact = useMemo(() => {
-    if (!selectedStart || !selectedEnd) return null
-    if (selectedStart > selectedEnd) return null
+    if (validRanges.length === 0) return null
     const slotsToUse = excludeActivities ? slots.filter(s => !s.slot.isActivity) : slots
-    return computeLeaveImpact(slotsToUse, holidays, selectedStart, selectedEnd, overrides, rpLeaves)
-  }, [slots, holidays, selectedStart, selectedEnd, overrides, excludeActivities, rpLeaves])
+    return computeLeavePlanImpact(slotsToUse, holidays, validRanges, overrides, rpLeaves)
+  }, [slots, holidays, validRanges, overrides, excludeActivities, rpLeaves])
 
   // Map subject code → name for display
   const subjectNames = useMemo(() => {
@@ -33,38 +43,76 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
     amber: 'text-amber-600 bg-amber-50',
     red: 'text-red-600 bg-red-50',
   }
+  const zoneTextColors = {
+    green: 'text-green-600',
+    amber: 'text-amber-600',
+    red: 'text-red-600',
+  }
 
   return (
     <div className="space-y-6">
-      {/* Date inputs */}
+      {/* Leave plan editor */}
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-sm font-medium text-gray-500 mb-3">What if I take leave?</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">From</label>
-            <input
-              type="date"
-              value={selectedStart}
-              onChange={e => setSelectedStart(e.target.value)}
-              min="2026-08-25"
-              max="2026-09-19"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-          <div>
-            <label className="block text-xs text-gray-500 mb-1">To</label>
-            <input
-              type="date"
-              value={selectedEnd}
-              onChange={e => setSelectedEnd(e.target.value)}
-              min={selectedStart || '2026-08-25'}
-              max="2026-09-19"
-              className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-          </div>
-        </div>
-        {selectedStart && selectedEnd && selectedStart > selectedEnd && (
-          <p className="mt-2 text-xs text-red-500">End date must be after start date</p>
+        <p className="text-xs text-gray-400 mb-3">
+          Stack multiple from-to ranges. Only upcoming classes in these dates count as missed.
+        </p>
+
+        {plan.map((range) => {
+          const invalid = range.startDate && range.endDate && range.startDate > range.endDate
+          return (
+            <div key={range.id} className="mb-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">From</label>
+                  <input
+                    type="date"
+                    value={range.startDate}
+                    onChange={e => onUpdateRange({ ...range, startDate: e.target.value })}
+                    min={TERM_MIN}
+                    max={TERM_MAX}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div className="flex items-end gap-2">
+                  <div className="flex-1">
+                    <label className="block text-xs text-gray-500 mb-1">To</label>
+                    <input
+                      type="date"
+                      value={range.endDate}
+                      onChange={e => onUpdateRange({ ...range, endDate: e.target.value })}
+                      min={range.startDate || TERM_MIN}
+                      max={TERM_MAX}
+                      className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => onRemoveRange(range.id)}
+                    className="px-2.5 py-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                    aria-label={`Remove leave range ${range.startDate} to ${range.endDate}`}
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              {invalid && (
+                <p className="mt-1 text-xs text-red-500">End date must be after start date</p>
+              )}
+            </div>
+          )
+        })}
+
+        {plan.length < MAX_PLAN_RANGES ? (
+          <button
+            onClick={() => onAddRange({ startDate: '', endDate: '' })}
+            className="mt-1 px-3 py-2 rounded-lg border border-dashed border-gray-300 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 transition-colors"
+          >
+            + Add leave range
+          </button>
+        ) : (
+          <p className="mt-1 text-xs text-gray-400">{MAX_PLAN_RANGES} range limit reached — remove one to add more.</p>
         )}
 
         <div className="mt-4 flex flex-col gap-3">
@@ -112,23 +160,28 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
             </div>
             <div className="flex items-center gap-4">
               <div className="text-center">
-                <div className="text-2xl font-bold text-gray-400">{impact.overallBefore}%</div>
-                <div className="text-xs text-gray-500">Before</div>
+                <div className="text-xl font-bold text-gray-400">{impact.overallBefore}%</div>
+                <div className="text-xs text-gray-500">Now</div>
               </div>
               <div className="text-2xl text-gray-300">&rarr;</div>
               <div className="text-center">
-                <div className={`text-2xl font-bold ${impact.overallZone === 'green' ? 'text-green-600' : impact.overallZone === 'amber' ? 'text-amber-600' : 'text-red-600'}`}>
-                  {impact.overallAfter}%
+                <div className={`text-3xl font-bold ${zoneTextColors[impact.overallFinalZone]}`}>
+                  {impact.overallFinal}%
                 </div>
-                <div className="text-xs text-gray-500">After</div>
+                <div className="text-xs text-gray-500 max-w-[180px]">
+                  if you attend every other future class
+                </div>
               </div>
             </div>
-            {impact.overallZone === 'red' && (
+            <div className="mt-3 text-xs text-gray-400">
+              If the term ended today: <span className="font-medium text-gray-600">{impact.overallAfter}%</span>
+            </div>
+            {impact.overallFinalZone === 'red' && (
               <div className="mt-3 p-2 bg-red-50 rounded-lg text-xs text-red-700">
                 This leave drops you below 75%. You may be detained.
               </div>
             )}
-            {impact.overallZone === 'amber' && (
+            {impact.overallFinalZone === 'amber' && (
               <div className="mt-3 p-2 bg-amber-50 rounded-lg text-xs text-amber-700">
                 Condonation risk. At course end, only medical OD can add percentage.
               </div>
@@ -195,9 +248,11 @@ export default function WhatIfCalendar({ slots, overrides, holidays }: Props) {
         </div>
       )}
 
-      {!selectedStart && !selectedEnd && (
+      {!impact && (
         <div className="text-center py-12 text-gray-400 text-sm">
-          Pick a date range above to see the impact
+          {plan.length === 0
+            ? 'Add a leave range above to see the impact'
+            : 'Fill both dates on a range above to see the impact'}
         </div>
       )}
     </div>
