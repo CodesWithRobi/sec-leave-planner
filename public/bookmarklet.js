@@ -2,6 +2,25 @@
 // Runs on learner.saveetha.in (same-origin), fetches attendance data, offers it for copy.
 // ES5-ish: var + function (no arrows, no template literals) for maximum browser compatibility.
 (function () {
+  // Immediate feedback + re-entry guard: say something the instant the script
+  // runs, and refuse to start twice so double-clicks can't fire duplicate
+  // fetches / toasts / clipboard writes.
+  if (window.__SEC_ATT_ACTIVE__) {
+    var dup = document.createElement('div');
+    dup.textContent = 'SEC Attendance: already running — wait for the result';
+    dup.style.cssText =
+      'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+      'background:#d97706;color:#fff;padding:12px 24px;border-radius:8px;' +
+      'font-size:14px;font-weight:600;z-index:9999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);' +
+      'white-space:nowrap;max-width:90vw;text-align:center;';
+    document.body.appendChild(dup);
+    setTimeout(function () { dup.remove(); }, 3000);
+    return;
+  }
+  window.__SEC_ATT_ACTIVE__ = true;
+  // Safety: if the run hangs somehow, let the next click start fresh.
+  setTimeout(function () { window.__SEC_ATT_ACTIVE__ = false; }, 45000);
+
   var TERM = 8;
   var BASE = '/academics/calculate-my-attendance';
 
@@ -14,17 +33,35 @@
     return 2;
   }
 
-  function toast(msg, color) {
-    var t = document.createElement('div');
-    t.textContent = msg;
-    t.style.cssText =
-      'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
-      'background:' + (color || '#16a34a') + ';color:#fff;padding:12px 24px;border-radius:8px;' +
-      'font-size:14px;font-weight:600;z-index:9999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);' +
-      'white-space:nowrap;max-width:90vw;text-align:center;';
-    document.body.appendChild(t);
-    setTimeout(function () { t.remove(); }, 8000);
+  // Single reusable toast element — updated in place, no stacking.
+  var toastEl = null;
+  function toast(msg, color, ms) {
+    if (!toastEl) {
+      toastEl = document.createElement('div');
+      toastEl.style.cssText =
+        'position:fixed;top:20px;left:50%;transform:translateX(-50%);' +
+        'color:#fff;padding:12px 24px;border-radius:8px;' +
+        'font-size:14px;font-weight:600;z-index:9999999;box-shadow:0 4px 12px rgba(0,0,0,0.3);' +
+        'white-space:nowrap;max-width:90vw;text-align:center;' +
+        'transition:background .2s;';
+      document.body.appendChild(toastEl);
+    }
+    toastEl.textContent = msg;
+    toastEl.style.background = color || '#16a34a';
+    if (toastEl._hideTimer) clearTimeout(toastEl._hideTimer);
+    if (ms) {
+      toastEl._hideTimer = setTimeout(function () {
+        if (toastEl) { toastEl.remove(); toastEl = null; }
+      }, ms);
+    }
   }
+
+  function done() {
+    window.__SEC_ATT_ACTIVE__ = false;
+  }
+
+  // Immediate "it started" feedback — appears before any network round-trip.
+  toast('SEC Attendance: extracting attendance…', '#2563eb');
 
   function showTextarea(json) {
     var ta = document.createElement('textarea');
@@ -36,7 +73,7 @@
     ta.focus();
     ta.select();
     ta.setSelectionRange(0, json.length);
-    toast('JSON ready — press Ctrl+A then Ctrl+C, then paste in SEC Leave Planner', '#2563eb');
+    toast('JSON ready — press Ctrl+A then Ctrl+C, then paste in SEC Leave Planner', '#2563eb', 8000);
   }
 
   fetch(BASE + '/slots/?term_id=' + TERM)
@@ -105,16 +142,20 @@
       if (navigator.clipboard && navigator.clipboard.writeText) {
         navigator.clipboard.writeText(json)
           .then(function () {
-            toast('Copied to clipboard! Paste in SEC Leave Planner (' + slots.length + ' subjects)');
+            toast('Copied to clipboard! Paste in SEC Leave Planner (' + slots.length + ' subjects)', '#16a34a', 8000);
+            done();
           })
           .catch(function () {
             showTextarea(json);
+            done();
           });
       } else {
         showTextarea(json);
+        done();
       }
     })
     .catch(function (e) {
-      toast('SEC Attendance: error — ' + e.message, '#dc2626');
+      toast('SEC Attendance: error — ' + e.message, '#dc2626', 8000);
+      done();
     });
 })();

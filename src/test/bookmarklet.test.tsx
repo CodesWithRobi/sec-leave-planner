@@ -33,6 +33,17 @@ describe('bookmarklet', () => {
     expect(BOOKMARKLET_SCRIPT).toContain('codeswithrobi.github.io/sec-leave-planner/bookmarklet.js')
   })
 
+  test('bookmarklet.js gives instant feedback and guards against double-clicks', () => {
+    // Users were clicking the bookmark repeatedly because nothing showed until
+    // all fetches finished. The deployed script must (1) toast the moment it
+    // runs, (2) refuse a second run while one is active, and (3) clear the
+    // guard when done so later clicks work again.
+    expect(bookmarkletJs).toContain('__SEC_ATT_ACTIVE__')
+    expect(bookmarkletJs).toContain('extracting attendance')
+    expect(bookmarkletJs).toContain('already running')
+    expect(bookmarkletJs).toContain('function done()')
+  })
+
   test('draggable link href is the real bookmarklet URL, not React 19\'s blocked error', () => {
     // React 19 rewrites javascript: JSX href props to:
     //   javascript:throw new Error('React has blocked a javascript: URL as a security precaution.')

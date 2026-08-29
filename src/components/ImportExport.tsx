@@ -143,7 +143,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
           </div>
           <div className="flex items-start gap-2 text-gray-500">
             <span className="font-bold text-gray-900">Tip:</span>
-            <span>No toast? A red toast shows the error — tell us what it says. If a blue box opens instead, select all (Ctrl+A) and copy (Ctrl+C).</span>
+            <span>A <strong>blue "Extracting attendance…"</strong> toast appears the instant you click — the green "Copied" toast follows when it's done. If you see no blue toast, the bookmarklet didn't run (re-drag it). Double-clicking just shows an orange "already running" note — the export won't restart.</span>
           </div>
         </div>
 
