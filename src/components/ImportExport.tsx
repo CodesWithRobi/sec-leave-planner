@@ -207,7 +207,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         <p className="text-xs text-gray-500 mb-3">
           Add holidays that aren't in the portal (rain holidays, event days, cancelled classes).
         </p>
-        <div className="flex gap-2 mb-3">
+        <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 mb-3">
           <input
             type="date"
             value={newHoliday}
@@ -219,12 +219,12 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
             value={newReason}
             onChange={e => setNewReason(e.target.value)}
             placeholder="Reason (optional)"
-            className="flex-1 border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
+            className="w-full min-w-0 border border-gray-200 rounded-lg px-3 py-1.5 text-sm"
           />
           <button
             onClick={addHoliday}
             disabled={!newHoliday}
-            className="px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50"
+            className="px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 shrink-0"
           >
             Add
           </button>
@@ -258,91 +258,118 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
         </p>
 
         {odEntries.length > 0 && (
-          <div className="space-y-2 mb-4">
-            {odEntries.map(od => (
-              <div key={od.id} className="flex items-center gap-1.5 py-1.5">
-                <input
-                  type="date"
-                  value={od.startDate}
-                  onChange={e => onUpdateOD({ ...od, startDate: e.target.value })}
-                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
-                />
-                <span className="text-gray-400 text-xs">to</span>
-                <input
-                  type="date"
-                  value={od.endDate}
-                  onChange={e => onUpdateOD({ ...od, endDate: e.target.value })}
-                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
-                />
-                <span className="text-gray-400 text-xs">·</span>
-                <input
-                  type="time"
-                  value={od.startTime || ''}
-                  onChange={e => onUpdateOD({ ...od, startTime: e.target.value || undefined })}
-                  title="Time window start (optional)"
-                  className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
-                />
-                <span className="text-gray-400 text-xs">–</span>
-                <input
-                  type="time"
-                  value={od.endTime || ''}
-                  onChange={e => onUpdateOD({ ...od, endTime: e.target.value || undefined })}
-                  title="Time window end (optional)"
-                  className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
-                />
-                <button
-                  onClick={() => onRemoveOD(od.id)}
-                  className="text-red-500 hover:text-red-700 text-xs ml-1"
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
+          <div className="space-y-3 mb-4">
+            {odEntries.map(od => {
+              const invalid = od.startDate && od.endDate && od.startDate > od.endDate
+              return (
+                <div key={od.id} className="border border-gray-100 rounded-xl p-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs text-gray-500 mb-1">From</label>
+                      <input
+                        type="date"
+                        value={od.startDate}
+                        onChange={e => onUpdateOD({ ...od, startDate: e.target.value })}
+                        className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                    <div className="flex items-end gap-2">
+                      <div className="flex-1 min-w-0">
+                        <label className="block text-xs text-gray-500 mb-1">To</label>
+                        <input
+                          type="date"
+                          value={od.endDate}
+                          onChange={e => onUpdateOD({ ...od, endDate: e.target.value })}
+                          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <button
+                        onClick={() => onRemoveOD(od.id)}
+                        className="px-2.5 py-2 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors shrink-0"
+                        aria-label={`Remove OD ${od.startDate} to ${od.endDate}`}
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                  <div className="mt-2 flex items-center gap-2">
+                    <span className="text-xs text-gray-500 shrink-0">Time</span>
+                    <input
+                      type="time"
+                      value={od.startTime || ''}
+                      onChange={e => onUpdateOD({ ...od, startTime: e.target.value || undefined })}
+                      title="Time window start (optional)"
+                      className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                    <span className="text-gray-400 text-xs shrink-0">–</span>
+                    <input
+                      type="time"
+                      value={od.endTime || ''}
+                      onChange={e => onUpdateOD({ ...od, endTime: e.target.value || undefined })}
+                      title="Time window end (optional)"
+                      className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  {invalid && <p className="mt-1 text-xs text-red-500">Start must be before end</p>}
+                </div>
+              )
+            })}
           </div>
         )}
 
         {odEntries.length < MAX_OD && (
-          <div>
-            <div className="flex items-center gap-1.5 mb-2">
-              <input
-                type="date"
-                value={newOD.startDate}
-                onChange={e => setNewOD(prev => ({ ...prev, startDate: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
-              />
-              <span className="text-gray-400 text-xs">to</span>
-              <input
-                type="date"
-                value={newOD.endDate}
-                onChange={e => setNewOD(prev => ({ ...prev, endDate: e.target.value }))}
-                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
-              />
-              <span className="text-gray-400 text-xs">·</span>
+          <div className="border border-dashed border-gray-300 rounded-xl p-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">From</label>
+                <input
+                  type="date"
+                  value={newOD.startDate}
+                  onChange={e => setNewOD(prev => ({ ...prev, startDate: e.target.value }))}
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+              <div className="flex items-end gap-2">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs text-gray-500 mb-1">To</label>
+                  <input
+                    type="date"
+                    value={newOD.endDate}
+                    onChange={e => setNewOD(prev => ({ ...prev, endDate: e.target.value }))}
+                    className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <button
+                  onClick={addOD}
+                  disabled={!newOD.startDate || !newOD.endDate}
+                  className="px-3 py-2 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 shrink-0"
+                >
+                  Add
+                </button>
+              </div>
+            </div>
+            <div className="mt-2 flex items-center gap-2">
+              <span className="text-xs text-gray-500 shrink-0">Time</span>
               <input
                 type="time"
                 value={newOD.startTime}
                 onChange={e => setNewOD(prev => ({ ...prev, startTime: e.target.value }))}
                 title="Time window start (optional)"
-                className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <span className="text-gray-400 text-xs">–</span>
+              <span className="text-gray-400 text-xs shrink-0">–</span>
               <input
                 type="time"
                 value={newOD.endTime}
                 onChange={e => setNewOD(prev => ({ ...prev, endTime: e.target.value }))}
                 title="Time window end (optional)"
-                className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+                className="flex-1 min-w-0 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
-              <button
-                onClick={addOD}
-                disabled={!newOD.startDate || !newOD.endDate}
-                className="px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 ml-1"
-              >
-                Add
-              </button>
             </div>
-            <p className="text-xxs text-gray-400 text-xs">
-              Leave the times empty to cover whole days. Up to {MAX_OD} entries.
+            <p className="mt-2 text-xs text-gray-400">
+              Leave the time empty to cover whole days. Up to {MAX_OD} entries.
             </p>
           </div>
         )}

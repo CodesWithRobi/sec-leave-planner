@@ -202,7 +202,7 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                   <span>{w.freeDaysBefore}d free before</span>
                   <span>{w.freeDaysAfter}d free after</span>
                 </div>
-                <div className="mt-3 flex items-center gap-3">
+                <div className="mt-3 flex flex-wrap items-center gap-x-3 gap-y-2">
                   <span className="text-sm text-gray-400">{w.overallBefore}%</span>
                   <span className="text-gray-300">&rarr;</span>
                   <span className={`text-sm font-bold ${zoneTextColors[w.overallFinalZone]}`}>
