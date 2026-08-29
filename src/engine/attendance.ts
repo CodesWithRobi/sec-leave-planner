@@ -1,4 +1,4 @@
-import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, VacationWindow } from './types'
+import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow } from './types'
 
 // Zone thresholds
 const GREEN_THRESHOLD = 80
@@ -139,6 +139,44 @@ export function applyOverrides(sessions: Session[], overrides: DateOverride[]): 
     }
     if (override.type === 'class_happened') {
       if (s.status === 'HOLIDAY') return { ...s, status: 'ABSENT' as const }
+    }
+    return s
+  })
+}
+
+/** Session start/end times as "HH:MM" strings (24h) or null when unknown.
+ *  Real imports store "10:00 - 11:59" in `time`; fixtures use field pairs. */
+function sessionTimeRange(s: Session): [string, string] | null {
+  if (s.time) {
+    const [a, b] = s.time.split(' - ').map(t => t.trim())
+    if (a && b && /^\d{2}:\d{2}$/.test(a) && /^\d{2}:\d{2}$/.test(b)) return [a, b]
+  }
+  if (s.startTime && s.endTime && /^\d{2}:\d{2}$/.test(s.startTime) && /^\d{2}:\d{2}$/.test(s.endTime)) {
+    return [s.startTime, s.endTime]
+  }
+  return null
+}
+
+/** Apply On-Duty entries: every session inside an OD's date range (AND, when
+ *  the OD has a time window, whose time overlaps it) becomes PRESENT.
+ *  Holidays stay holidays; already-PRESENT sessions are unchanged. Sessions
+ *  without time info are NOT matched by time-restricted ODs (only by
+ *  whole-day ODs). */
+export function applyODs(sessions: Session[], ods: ODEntry[]): Session[] {
+  if (ods.length === 0) return sessions
+  return sessions.map(s => {
+    if (s.status === 'HOLIDAY') return s
+    const isoDate = parseSessionDate(s.date)
+    for (const od of ods) {
+      if (!od.startDate || !od.endDate) continue
+      if (isoDate < od.startDate || isoDate > od.endDate) continue
+      if (od.startTime && od.endTime) {
+        const range = sessionTimeRange(s)
+        if (!range) continue // can't verify — don't mark
+        const [start, end] = range
+        if (!(start < od.endTime && end > od.startTime)) continue
+      }
+      return { ...s, status: 'PRESENT' as const }
     }
     return s
   })

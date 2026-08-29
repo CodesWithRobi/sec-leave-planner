@@ -1,9 +1,10 @@
 import { useState, useCallback, useEffect } from 'react'
-import type { SlotDetail, DateOverride, AttendanceData, LeaveRange } from '../engine/types'
+import type { SlotDetail, DateOverride, AttendanceData, LeaveRange, ODEntry } from '../engine/types'
 
 const STORAGE_KEY = 'sec-leave-planner-data'
 const OVERRIDES_KEY = 'sec-leave-overrides'
 const LEAVE_PLAN_KEY = 'sec-leave-plan'
+const OD_KEY = 'sec-leave-od'
 
 function newRangeId(): string {
   return typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -33,6 +34,13 @@ export function useAttendanceStore() {
     } catch { return [] }
   })
 
+  const [odEntries, setOdEntries] = useState<ODEntry[]>(() => {
+    try {
+      const raw = localStorage.getItem(OD_KEY)
+      return raw ? JSON.parse(raw) : []
+    } catch { return [] }
+  })
+
   const [student, setStudent] = useState<string>(() => {
     return localStorage.getItem('sec-leave-student') || ''
   })
@@ -48,6 +56,10 @@ export function useAttendanceStore() {
   useEffect(() => {
     localStorage.setItem(LEAVE_PLAN_KEY, JSON.stringify(leavePlan))
   }, [leavePlan])
+
+  useEffect(() => {
+    localStorage.setItem(OD_KEY, JSON.stringify(odEntries))
+  }, [odEntries])
 
   useEffect(() => {
     localStorage.setItem('sec-leave-student', student)
@@ -81,14 +93,28 @@ export function useAttendanceStore() {
     setLeavePlan(prev => prev.filter(r => r.id !== id))
   }, [])
 
+  const addOD = useCallback((od: Omit<ODEntry, 'id'>) => {
+    setOdEntries(prev => [...prev, { ...od, id: newRangeId() }])
+  }, [])
+
+  const updateOD = useCallback((od: ODEntry) => {
+    setOdEntries(prev => prev.map(o => (o.id === od.id ? od : o)))
+  }, [])
+
+  const removeOD = useCallback((id: string) => {
+    setOdEntries(prev => prev.filter(o => o.id !== id))
+  }, [])
+
   const clearAll = useCallback(() => {
     setSlots([])
     setOverrides([])
     setLeavePlan([])
+    setOdEntries([])
     setStudent('')
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(OVERRIDES_KEY)
     localStorage.removeItem(LEAVE_PLAN_KEY)
+    localStorage.removeItem(OD_KEY)
     localStorage.removeItem('sec-leave-student')
   }, [])
 
@@ -96,6 +122,7 @@ export function useAttendanceStore() {
     slots,
     overrides,
     leavePlan,
+    odEntries,
     student,
     importData,
     addOverride,
@@ -103,6 +130,9 @@ export function useAttendanceStore() {
     addLeaveRange,
     updateLeaveRange,
     removeLeaveRange,
+    addOD,
+    updateOD,
+    removeOD,
     clearAll,
     hasData: slots.length > 0,
   }

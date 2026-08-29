@@ -8,8 +8,18 @@ import {
   findVacationWindows,
   formatClasses,
   parseSessionDate,
+  applyOverrides,
+  applyODs,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
+import type { Session, ODEntry } from '../engine/types'
+
+const od = (partial: Partial<ODEntry>): ODEntry => ({
+  id: 'od-test',
+  startDate: '2026-01-01',
+  endDate: '2026-12-31',
+  ...partial,
+})
 
 describe('getZone', () => {
   it('green at 80%+', () => {
@@ -263,5 +273,99 @@ describe('formatClasses', () => {
   })
   it('formats 5h as 2.5 classes', () => {
     expect(formatClasses(5)).toBe('2.5 classes (5h)')
+  })
+})
+
+describe('applyODs (On Duty)', () => {
+  it('no-op with no OD entries', () => {
+    const out = applyODs(JAVA.sessions, [])
+    expect(out).toEqual(JAVA.sessions)
+  })
+
+  it('whole-day OD: ABSENT and UPCOMING become PRESENT, PRESENT kept, HOLIDAY skipped', () => {
+    const out = applyODs(JAVA.sessions, [od({ startDate: '2026-08-14', endDate: '2026-08-15' })])
+    const byDate = new Map(out.map(s => [s.date, s.status]))
+    expect(byDate.get('2026-08-14')).toBe('PRESENT') // was ABSENT
+    expect(byDate.get('2026-08-15')).toBe('HOLIDAY') // stays holiday
+    expect(byDate.get('2026-07-17')).toBe('PRESENT') // already present, untouched
+    expect(byDate.get('2026-08-25')).toBe('UPCOMING') // outside range, untouched
+  })
+
+  it('date-bounded: only sessions inside the range flip', () => {
+    const out = applyODs(JAVA.sessions, [od({ startDate: '2026-08-01', endDate: '2026-08-01' })])
+    const byDate = new Map(out.map(s => [s.date, s.status]))
+    expect(byDate.get('2026-08-01')).toBe('PRESENT') // was ABSENT
+    expect(byDate.get('2026-08-14')).toBe('ABSENT') // same status, but outside range
+  })
+
+  it('time window (fixture shape: startTime/endTime), no overlap → untouched', () => {
+    const out = applyODs(AOA.sessions, [
+      od({ startDate: '2026-07-16', endDate: '2026-07-16', startTime: '13:00', endTime: '14:00' }),
+    ])
+    expect(out.find(s => s.date === '2026-07-16')!.status).toBe('ABSENT') // 15:00-16:59 vs 13-14
+  })
+
+  it('time window overlap → PRESENT', () => {
+    const out = applyODs(AOA.sessions, [
+      od({ startDate: '2026-07-16', endDate: '2026-07-16', startTime: '14:00', endTime: '16:00' }),
+    ])
+    expect(out.find(s => s.date === '2026-07-16')!.status).toBe('PRESENT') // 15:00-16:59 overlaps
+  })
+
+  it('time window matches real import shape (only the `time` field)', () => {
+    const real: Session = {
+      slotId: 1565,
+      date: '2026-07-17',
+      startTime: '',
+      endTime: '',
+      time: '10:00 - 11:59',
+      timing: 'CLS10-12',
+      hours: 2,
+      status: 'ABSENT',
+    }
+    // Overlaps: 10:00 < 10:30 and 11:59 > 09:00
+    const hit = applyODs([real], [od({ startDate: '2026-07-17', endDate: '2026-07-17', startTime: '09:00', endTime: '10:30' })])
+    expect(hit[0].status).toBe('PRESENT')
+    // No overlap: 13:00-14:00 window
+    const miss = applyODs([real], [od({ startDate: '2026-07-17', endDate: '2026-07-17', startTime: '13:00', endTime: '14:00' })])
+    expect(miss[0].status).toBe('ABSENT')
+    // Time-restricted OD leaves time-less sessions alone
+    const noTime: Session = { ...real, time: undefined }
+    const untouched = applyODs([noTime], [od({ startDate: '2026-07-17', endDate: '2026-07-17', startTime: '09:00', endTime: '10:30' })])
+    expect(untouched[0].status).toBe('ABSENT')
+  })
+
+  it('every session in range flips, including UPCOMING (advance duty day)', () => {
+    const out = applyODs(JAVA.sessions, [od({ startDate: '2026-08-25', endDate: '2026-08-25' })])
+    expect(out.find(s => s.date === '2026-08-25')!.status).toBe('PRESENT')
+  })
+
+  it('OD-present session is protected from a leave range', () => {
+    const odded = applyODs(JAVA.sessions, [od({ startDate: '2026-08-25', endDate: '2026-08-25' })])
+    const withOd = computeLeavePlanImpact([{ ...JAVA, sessions: odded }], HOLIDAYS, [
+      { id: 'x', startDate: '2026-08-25', endDate: '2026-08-26' },
+    ])
+    expect(withOd.sessionsMissed).toBe(0) // Aug 25 now PRESENT, Aug 26 no session
+
+    const withoutOd = computeLeavePlanImpact([JAVA], HOLIDAYS, [
+      { id: 'x', startDate: '2026-08-25', endDate: '2026-08-26' },
+    ])
+    expect(withoutOd.sessionsMissed).toBe(1) // Aug 25 UPCOMING → missed
+    expect(withOd.overallFinal).toBeGreaterThan(withoutOd.overallFinal)
+  })
+
+  it('OD raises the overall % (HRM: 26/32 → 28/32)', () => {
+    const out = applyODs(HRM.sessions, [od({ startDate: '2026-08-14', endDate: '2026-08-14' })])
+    const stats = computeOverallStats([{ ...HRM, sessions: out }], HOLIDAYS, true)
+    expect(stats.presentHours).toBe(28)
+    expect(stats.totalHours).toBe(32)
+    expect(stats.percentage).toBeCloseTo(87.5, 1)
+  })
+
+  it('OD survives the engine re-applying overrides (holiday stays holiday)', () => {
+    const out = applyODs(JAVA.sessions, [od({ startDate: '2026-08-15', endDate: '2026-08-15' })])
+    expect(out.find(s => s.date === '2026-08-15')!.status).toBe('HOLIDAY')
+    const again = applyOverrides(out, [{ date: '2026-08-15', type: 'holiday' }])
+    expect(again.find(s => s.date === '2026-08-15')!.status).toBe('HOLIDAY')
   })
 })

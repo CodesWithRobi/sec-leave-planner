@@ -1,6 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { BOOKMARKLET_URL } from '../bookmarklet'
-import type { AttendanceData, DateOverride } from '../engine/types'
+import type { AttendanceData, DateOverride, ODEntry } from '../engine/types'
 
 interface Props {
   onImport: (data: AttendanceData) => void
@@ -9,9 +9,15 @@ interface Props {
   overrides: DateOverride[]
   onAddOverride: (o: DateOverride) => void
   onRemoveOverride: (date: string) => void
+  odEntries: ODEntry[]
+  onAddOD: (o: Omit<ODEntry, 'id'>) => void
+  onUpdateOD: (o: ODEntry) => void
+  onRemoveOD: (id: string) => void
 }
 
-export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride }: Props) {
+const MAX_OD = 10
+
+export default function ImportExport({ onImport, onClear, hasData, overrides, onAddOverride, onRemoveOverride, odEntries, onAddOD, onUpdateOD, onRemoveOD }: Props) {
   // React 19 blocks javascript: URLs as JSX href props (rewrites them to a
   // thrown security error — which is exactly what got dragged to the user's
   // bookmarks bar). So the href is injected directly into the DOM via
@@ -26,6 +32,31 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
   const [newHoliday, setNewHoliday] = useState('')
   const [newReason, setNewReason] = useState('')
   const [urlCopied, setUrlCopied] = useState(false)
+  const [newOD, setNewOD] = useState({ startDate: '', endDate: '', startTime: '', endTime: '' })
+  const [odError, setOdError] = useState('')
+
+  const odValid = (o: { startDate: string; endDate: string; startTime: string; endTime: string }) => {
+    if (!o.startDate || !o.endDate) return false
+    if (o.startDate > o.endDate) return false
+    if ((o.startTime && !o.endTime) || (!o.startTime && o.endTime)) return false // both or neither
+    if (o.startTime && o.endTime && o.startTime >= o.endTime) return false
+    return true
+  }
+
+  const addOD = () => {
+    setOdError('')
+    if (!odValid(newOD)) {
+      setOdError('Enter a valid range: dates required (start before end) and either both times or no times.')
+      return
+    }
+    onAddOD({
+      startDate: newOD.startDate,
+      endDate: newOD.endDate,
+      startTime: newOD.startTime || undefined,
+      endTime: newOD.endTime || undefined,
+    })
+    setNewOD({ startDate: '', endDate: '', startTime: '', endTime: '' })
+  }
 
   const handlePaste = () => {
     setError('')
@@ -215,6 +246,108 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
             ))}
           </div>
         )}
+      </div>
+
+      {/* On Duty (OD) */}
+      <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <h2 className="text-sm font-medium text-gray-500 mb-3">On Duty (OD)</h2>
+        <p className="text-xs text-gray-500 mb-3">
+          Mark sessions as <strong>present</strong> for a date range — optionally limited to a time
+          window. Works for past <em>and</em> future sessions (e.g. a known duty day). Holidays stay
+          holidays.
+        </p>
+
+        {odEntries.length > 0 && (
+          <div className="space-y-2 mb-4">
+            {odEntries.map(od => (
+              <div key={od.id} className="flex items-center gap-1.5 py-1.5">
+                <input
+                  type="date"
+                  value={od.startDate}
+                  onChange={e => onUpdateOD({ ...od, startDate: e.target.value })}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
+                />
+                <span className="text-gray-400 text-xs">to</span>
+                <input
+                  type="date"
+                  value={od.endDate}
+                  onChange={e => onUpdateOD({ ...od, endDate: e.target.value })}
+                  className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
+                />
+                <span className="text-gray-400 text-xs">·</span>
+                <input
+                  type="time"
+                  value={od.startTime || ''}
+                  onChange={e => onUpdateOD({ ...od, startTime: e.target.value || undefined })}
+                  title="Time window start (optional)"
+                  className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+                />
+                <span className="text-gray-400 text-xs">–</span>
+                <input
+                  type="time"
+                  value={od.endTime || ''}
+                  onChange={e => onUpdateOD({ ...od, endTime: e.target.value || undefined })}
+                  title="Time window end (optional)"
+                  className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+                />
+                <button
+                  onClick={() => onRemoveOD(od.id)}
+                  className="text-red-500 hover:text-red-700 text-xs ml-1"
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {odEntries.length < MAX_OD && (
+          <div>
+            <div className="flex items-center gap-1.5 mb-2">
+              <input
+                type="date"
+                value={newOD.startDate}
+                onChange={e => setNewOD(prev => ({ ...prev, startDate: e.target.value }))}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
+              />
+              <span className="text-gray-400 text-xs">to</span>
+              <input
+                type="date"
+                value={newOD.endDate}
+                onChange={e => setNewOD(prev => ({ ...prev, endDate: e.target.value }))}
+                className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm w-[9.5rem]"
+              />
+              <span className="text-gray-400 text-xs">·</span>
+              <input
+                type="time"
+                value={newOD.startTime}
+                onChange={e => setNewOD(prev => ({ ...prev, startTime: e.target.value }))}
+                title="Time window start (optional)"
+                className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+              />
+              <span className="text-gray-400 text-xs">–</span>
+              <input
+                type="time"
+                value={newOD.endTime}
+                onChange={e => setNewOD(prev => ({ ...prev, endTime: e.target.value }))}
+                title="Time window end (optional)"
+                className="border border-gray-200 rounded-lg px-1.5 py-1.5 text-sm w-[5.5rem]"
+              />
+              <button
+                onClick={addOD}
+                disabled={!newOD.startDate || !newOD.endDate}
+                className="px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 disabled:opacity-50 ml-1"
+              >
+                Add
+              </button>
+            </div>
+            <p className="text-xxs text-gray-400 text-xs">
+              Leave the times empty to cover whole days. Up to {MAX_OD} entries.
+            </p>
+          </div>
+        )}
+
+        {odError && <div className="mt-2 bg-red-50 rounded-xl p-3 text-sm text-red-700">{odError}</div>}
       </div>
 
       {/* Preloaded holidays */}

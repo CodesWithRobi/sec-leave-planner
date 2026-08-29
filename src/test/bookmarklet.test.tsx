@@ -45,6 +45,10 @@ describe('bookmarklet', () => {
         overrides={[]}
         onAddOverride={noop}
         onRemoveOverride={noop}
+        odEntries={[]}
+        onAddOD={noop}
+        onUpdateOD={noop}
+        onRemoveOD={noop}
       />
     )
     const link = screen.getByText('📋 SEC Attendance').closest('a') as HTMLAnchorElement

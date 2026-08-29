@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useAttendanceStore } from './store/useAttendanceStore'
+import { applyODs } from './engine/attendance'
 import Dashboard from './components/Dashboard'
 import WhatIfCalendar from './components/WhatIfCalendar'
 import TripPlanner from './components/TripPlanner'
@@ -20,6 +21,15 @@ export default function App() {
     return h
   }, [store.overrides])
 
+  // Sessions as the user's world actually is: OD entries are applied once at
+  // the boundary so every tab (Dashboard, What-If, Trip) sees them. The leave
+  // engine re-applies overrides on top of these and can never un-present an
+  // OD-covered session. Dashboard's dates stay "holiday" for upcoming math.
+  const effectiveSlots = useMemo(
+    () => store.slots.map(sd => ({ ...sd, sessions: applyODs(sd.sessions, store.odEntries) })),
+    [store.slots, store.odEntries],
+  )
+
   const importExportProps = {
     onImport: store.importData,
     onClear: store.clearAll,
@@ -27,6 +37,10 @@ export default function App() {
     onRemoveOverride: store.removeOverride,
     hasData: store.hasData,
     overrides: store.overrides,
+    odEntries: store.odEntries,
+    onAddOD: store.addOD,
+    onUpdateOD: store.updateOD,
+    onRemoveOD: store.removeOD,
   }
 
   if (!store.hasData) {
@@ -55,10 +69,10 @@ export default function App() {
       </header>
 
       <main className="max-w-lg mx-auto px-4 py-6 pb-24">
-        {tab === 'dashboard' && <Dashboard slots={store.slots} overrides={store.overrides} />}
+        {tab === 'dashboard' && <Dashboard slots={effectiveSlots} overrides={store.overrides} />}
         {tab === 'whatif' && (
           <WhatIfCalendar
-            slots={store.slots}
+            slots={effectiveSlots}
             overrides={store.overrides}
             holidays={holidays}
             plan={store.leavePlan}
@@ -69,7 +83,7 @@ export default function App() {
         )}
         {tab === 'trip' && (
           <TripPlanner
-            slots={store.slots}
+            slots={effectiveSlots}
             overrides={store.overrides}
             holidays={holidays}
             plan={store.leavePlan}

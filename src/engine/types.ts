@@ -25,6 +25,7 @@ export interface Session {
   startTime: string     // "10:00"
   endTime: string       // "12:00"
   timing: string        // "CLS10-12"
+  time?: string         // "10:00 - 11:59" — as imported from the portal
   hours: number         // 2.0 for regular, 1.5 for mentor meet, 1.0 for SDCP
   status: SessionStatus
 }
@@ -73,6 +74,16 @@ export interface LeaveRange {
   id: string
   startDate: string   // "2026-09-03"
   endDate: string     // "2026-09-05"
+}
+
+/** One On-Duty (OD) entry: sessions inside this date range (and, if
+ *  given, time window) count as PRESENT. Future sessions included. */
+export interface ODEntry {
+  id: string
+  startDate: string   // "2026-09-03"
+  endDate: string     // "2026-09-05"
+  startTime?: string  // "09:00" — optional, 24h
+  endTime?: string    // "12:00" — optional, 24h
 }
 
 /** Leave window result.
