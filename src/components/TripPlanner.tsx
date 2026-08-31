@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { SlotDetail, DateOverride, LeaveRange } from '../engine/types'
-import { findVacationWindows, computeLeavePlanImpact, formatClasses } from '../engine/attendance'
+import { findVacationWindows, computeLeavePlanImpact } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
 
@@ -209,7 +209,7 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                     {w.overallFinal}%
                   </span>
                   <span className="text-xs text-gray-400">
-                    (if term ended: {w.overallAfter}%) · {formatClasses(w.hoursMissed)} missed
+                    (if term ended: {w.overallAfter}%) · {w.sessionsMissed} sessions · {w.hoursMissed}h missed
                   </span>
                   <button
                     onClick={() => onAddRange({ startDate: w.startDate, endDate: w.endDate })}
@@ -265,11 +265,11 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                               </span>
                             )}
                             <span className="text-gray-400 w-20 text-right">
-                              miss {formatClasses(data.missedHours)}
+                              miss {data.missedClasses} classes ({data.missedHours}h)
                             </span>
                             {!isActivity && (
                               <span className="text-gray-400 w-28 text-right">
-                                budget {formatClasses(data.remainingBudget)}
+                                budget {data.remainingBudgetSessions} classes ({data.remainingBudget}h)
                               </span>
                             )}
                           </div>

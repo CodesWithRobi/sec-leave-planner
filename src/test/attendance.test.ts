@@ -10,6 +10,7 @@ import {
   parseSessionDate,
   applyOverrides,
   applyODs,
+  sessionHours,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
 import type { Session, ODEntry } from '../engine/types'
@@ -48,8 +49,9 @@ describe('computeSlotStats', () => {
 
   it('Java: remaining sessions after removing holidays', () => {
     const stats = computeSlotStats(JAVA, HOLIDAYS)
-    // 12 upcoming - Sep 4 holiday = 11 × 2h = 22h
-    expect(stats.remainingHours).toBe(22)
+    // 11 upcoming: 3×2h (Aug 25/28/29) + 8×1.5h (Sep, circular 139) = 18h
+    expect(stats.remainingHours).toBe(18)
+    expect(stats.remainingSessions).toBe(11)
   })
 
   it('MA212: 36/42 = 85.71%', () => {
@@ -98,10 +100,13 @@ describe('computeOverallStats', () => {
     expect(stats.percentage).toBeCloseTo(82.98, 0)
   })
 
-  it('courses-only budget: ~25h missable', () => {
+  it('courses-only budget: shrinks with 1.5h classes (circular 139)', () => {
     const stats = computeOverallStats(ALL_SLOTS, HOLIDAYS, true)
-    expect(stats.budgetHours).toBeGreaterThan(24)
-    expect(stats.budgetHours).toBeLessThan(26)
+    // remaining = JAVA 18 + MA212 21 + HRM 16.5 + AOA 23 = 78.5h
+    // maxMiss = 126 + 78.5 - 0.8(150 + 78.5) = 21.7h
+    expect(stats.remainingHours).toBeCloseTo(78.5, 1)
+    expect(stats.budgetHours).toBeGreaterThan(20.5)
+    expect(stats.budgetHours).toBeLessThan(23)
   })
 })
 
@@ -159,8 +164,8 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
     const impact = computeLeavePlanImpact(ALL_SLOTS, HOLIDAYS, [])
     expect(impact.overallBefore).toBeCloseTo(82.98, 1)
     expect(impact.overallAfter).toBe(impact.overallBefore) // nothing missed
-    // 136.5 present + 106 upcoming = 242.5 of 270.5 = 89.65%
-    expect(impact.overallFinal).toBeCloseTo(89.65, 1)
+    // 136.5 present + 88.5 upcoming (1.5h classes from Aug 31) = 225 of 253 = 88.93%
+    expect(impact.overallFinal).toBeCloseTo(88.93, 1)
     expect(impact.overallFinalZone).toBe('green')
     expect(impact.sessionsMissed).toBe(0)
   })
@@ -168,9 +173,9 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
   it('1-day leave (Sep 3): projected main number, term-ended secondary', () => {
     const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03')
     expect(impact.sessionsMissed).toBe(3)
-    expect(impact.hoursMissed).toBe(4) // AOA 2h + SDCP1 1h + SDCP2 1h
-    expect(impact.overallAfter).toBeCloseTo(81.01, 1)
-    expect(impact.overallFinal).toBeCloseTo(88.17, 1)
+    expect(impact.hoursMissed).toBe(3.5) // AOA 1.5h (circular) + SDCP1 1h + SDCP2 1h
+    expect(impact.overallAfter).toBeCloseTo(81.25, 1) // 136.5/168
+    expect(impact.overallFinal).toBeCloseTo(87.55, 1) // (136.5 + 85)/253
     expect(impact.overallFinal).toBeGreaterThan(impact.overallAfter)
     expect(impact.overallFinalZone).toBe('green')
   })
@@ -179,9 +184,12 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
     const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-12')
     // Cross-check against the closed form computed from the reported numbers:
     // after = (P)/(C+L), final = (P + R - L)/(C + R), so final = after ratio + remaining scaling.
-    // Exact engine values: after 63.05, final 70.43
-    expect(impact.overallAfter).toBeCloseTo(63.05, 1)
-    expect(impact.overallFinal).toBeCloseTo(70.43, 1)
+    // Missed 28 sessions = 24×1.5h (circular 139) + 4×1h (SDCP) = 40h.
+    // Exact engine values: after 136.5/204.5 = 66.75, final 185/253 = 73.12
+    expect(impact.sessionsMissed).toBe(28)
+    expect(impact.hoursMissed).toBe(40)
+    expect(impact.overallAfter).toBeCloseTo(66.75, 1)
+    expect(impact.overallFinal).toBeCloseTo(73.12, 1)
     expect(impact.overallFinalZone).toBe('red')
   })
 
@@ -273,6 +281,39 @@ describe('formatClasses', () => {
   })
   it('formats 5h as 2.5 classes', () => {
     expect(formatClasses(5)).toBe('2.5 classes (5h)')
+  })
+})
+
+describe('sessionHours (circular 139: every 2h class from 2026-08-31 = 1.5h)', () => {
+  const s = (date: string, hours: number, timing = ''): Session => ({
+    slotId: 1, date, startTime: '', endTime: '', timing, hours, status: 'UPCOMING',
+  })
+
+  it('2h class before the date stays 2h', () => {
+    expect(sessionHours(s('2026-08-28', 2))).toBe(2)
+  })
+  it('2h class on the date becomes 1.5h (boundary: Aug 31 included)', () => {
+    expect(sessionHours(s('2026-08-31', 2))).toBe(1.5)
+  })
+  it('2h class after the date becomes 1.5h', () => {
+    expect(sessionHours(s('2026-09-01', 2))).toBe(1.5)
+  })
+  it('1h (SDCP) and 1.5h (mentor) classes are unchanged', () => {
+    expect(sessionHours(s('2026-09-03', 1))).toBe(1)
+    expect(sessionHours(s('2026-09-03', 1.5))).toBe(1.5)
+  })
+  it('CLS span in timing wins; human dates parse', () => {
+    expect(sessionHours(s('17 Sep 2026', 2, 'CLS10-12'))).toBe(1.5)
+    expect(sessionHours(s('28 Aug 2026', 2, 'CLS10-12'))).toBe(2)
+    expect(sessionHours(s('01 Sep 2026', 1, 'CLS10-11'))).toBe(1) // 1h CLS untouched
+  })
+  it('audit: projected pools reflect the rule', () => {
+    const overall = computeOverallStats(ALL_SLOTS, HOLIDAYS, false)
+    // remaining = JAVA 18 + MA212 21 + HRM 16.5 + AOA 23 + SDCP 5 + SDCP 5 = 88.5h
+    expect(overall.remainingHours).toBeCloseTo(88.5, 1)
+    expect(overall.remainingSessions).toBe(58)
+    expect(overall.presentSessions).toBe(71)
+    expect(overall.totalSessions).toBe(86)
   })
 })
 

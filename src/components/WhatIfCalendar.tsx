@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { SlotDetail, DateOverride, LeaveRange } from '../engine/types'
-import { computeLeavePlanImpact, formatClasses } from '../engine/attendance'
+import { computeLeavePlanImpact } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
 const TERM_MIN = '2026-08-25'
@@ -154,7 +154,7 @@ export default function WhatIfCalendar({ slots, overrides, holidays, plan, onAdd
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-medium text-gray-500">Overall Impact</h3>
               <span className="text-xs text-gray-400">
-                {impact.daysCount} days · {impact.sessionsMissed} sessions · {formatClasses(impact.hoursMissed)} missed
+                {impact.daysCount} days · {impact.sessionsMissed} sessions missed ({impact.hoursMissed}h)
                 {impact.rpLeavesUsed > 0 && <span className="text-blue-600 ml-1">· {impact.rpLeavesUsed} RP used</span>}
               </span>
             </div>
@@ -226,9 +226,9 @@ export default function WhatIfCalendar({ slots, overrides, holidays, plan, onAdd
                       </div>
                     </div>
                     <div className="mt-1 text-xs text-gray-500 ml-2">
-                      Missed: {formatClasses(data.missedHours)}
+                      Missed: {data.missedClasses} classes ({data.missedHours}h)
                       {!isActivity && (
-                        <> · Remaining budget: {formatClasses(data.remainingBudget)}</>
+                        <> · Remaining budget: {data.remainingBudgetSessions} classes ({data.remainingBudget}h)</>
                       )}
                       {!isActivity && (
                         unrecoverable ? (

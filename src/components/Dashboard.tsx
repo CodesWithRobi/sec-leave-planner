@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats, formatClasses, parseSessionDate } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, sessionHours, parseSessionDate } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -40,11 +40,8 @@ export default function Dashboard({ slots, overrides }: Props) {
 
   const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
 
-  // Overall safe misses: how many 2hr classes can miss before overall drops to 80%
-  const safeMisses = useMemo(() => {
-    const maxMissHours = overall.presentHours + overall.remainingHours - 0.8 * (overall.totalHours + overall.remainingHours)
-    return Math.max(0, Math.floor(maxMissHours / 2))
-  }, [overall])
+  // Overall safe misses: sessions you can miss before the 80% floor (count-based)
+  const safeMisses = overall.budgetSessions
 
   // SDCP scenario analysis
   const sdcpScenario = useMemo(() => {
@@ -54,9 +51,9 @@ export default function Dashboard({ slots, overrides }: Props) {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
       const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
-      const p = present.reduce((sum, s) => sum + s.hours, 0)
-      const c = conducted.reduce((sum, s) => sum + s.hours, 0)
-      const f = future.reduce((sum, s) => sum + s.hours, 0)
+      const p = present.reduce((sum, s) => sum + sessionHours(s), 0)
+      const c = conducted.reduce((sum, s) => sum + sessionHours(s), 0)
+      const f = future.reduce((sum, s) => sum + sessionHours(s), 0)
       allPresent += p; allConducted += c; allRemaining += f
       if (sd.slot.subjectCode === 'SDCP' && sd.slot.isActivity) {
         sdcpRemaining += f
@@ -99,9 +96,9 @@ export default function Dashboard({ slots, overrides }: Props) {
         const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
         return {
           slot: sd.slot,
-          attended: present.reduce((sum, s) => sum + s.hours, 0),
-          total: conducted.reduce((sum, s) => sum + s.hours, 0),
-          remaining: future.reduce((sum, s) => sum + s.hours, 0),
+          attended: present.reduce((sum, s) => sum + sessionHours(s), 0),
+          total: conducted.reduce((sum, s) => sum + sessionHours(s), 0),
+          remaining: future.reduce((sum, s) => sum + sessionHours(s), 0),
         }
       }),
     [slots, holidays]
@@ -130,11 +127,11 @@ export default function Dashboard({ slots, overrides }: Props) {
         <div className="mt-4 grid grid-cols-3 gap-3">
           <div className="bg-gray-50 rounded-xl p-3 text-center">
             <div className="text-xs text-gray-500 mb-1">Attended</div>
-            <div className="font-bold text-sm">{formatClasses(overall.presentHours)}</div>
+            <div className="font-bold text-sm">{overall.presentSessions} classes ({overall.presentHours}h)</div>
           </div>
           <div className="bg-gray-50 rounded-xl p-3 text-center">
             <div className="text-xs text-gray-500 mb-1">Left</div>
-            <div className="font-bold text-sm">{formatClasses(overall.remainingHours)}</div>
+            <div className="font-bold text-sm">{overall.remainingSessions} classes ({overall.remainingHours}h)</div>
           </div>
           <div className={`rounded-xl p-3 text-center ${overall.budgetHours > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="text-xs text-gray-500 mb-1">Can still miss</div>
@@ -184,7 +181,7 @@ export default function Dashboard({ slots, overrides }: Props) {
         <h2 className="text-sm font-medium text-gray-500 mb-3">Per Subject</h2>
         <div className="grid gap-2.5">
           {subjectStats.map(({ slot: s, stats }) => {
-            const sMisses = Math.max(0, Math.floor(stats.budgetHours / 2))
+            const sMisses = Math.max(0, stats.budgetSessions)
             const isDanger = stats.percentage < 80
             return (
               <div key={s.id} className={`bg-white rounded-xl p-4 shadow-sm border ${isDanger ? 'border-red-200' : 'border-gray-100'}`}>
@@ -200,7 +197,7 @@ export default function Dashboard({ slots, overrides }: Props) {
                     <div className="text-right">
                       <span className={`text-lg font-bold ${ZONE_TEXT[stats.zone]}`}>{stats.percentage}%</span>
                       <div className="text-[10px] text-gray-400">
-                        {formatClasses(stats.presentHours)} / {formatClasses(stats.totalHours)}
+                        {stats.presentSessions} classes ({stats.presentHours}h) / {stats.totalSessions} classes ({stats.totalHours}h)
                       </div>
                     </div>
                     <div className={`w-2 h-10 rounded-full ${ZONE_COLORS[stats.zone]}`} />

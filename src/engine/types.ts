@@ -60,10 +60,13 @@ export type VerdictZone = 'green' | 'amber' | 'red'
 
 /** Computed stats for one slot or overall */
 export interface ComputedStats {
+  presentSessions: number // actual sessions, not hours/2 — "classes"
+  totalSessions: number   // conducted sessions
   presentHours: number
   totalHours: number
   percentage: number
   remainingHours: number
+  remainingSessions: number // upcoming classes
   budgetHours: number   // max hours may miss at >=80%
   budgetSessions: number // same but in session count
   zone: VerdictZone
@@ -99,7 +102,7 @@ export interface LeaveImpact {
   hoursMissed: number
   rpLeavesUsed: number
   rpCoveredDates: string[]   // ISO dates covered by RP leave
-  perSubject: Record<string, { before: number; after: number; zone: VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number }>
+  perSubject: Record<string, { before: number; after: number; zone: VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number; remainingBudgetSessions: number }>
   overallBefore: number
   overallAfter: number
   overallFinal: number

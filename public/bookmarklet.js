@@ -33,6 +33,21 @@
     return 2;
   }
 
+  // Portal dates look like "17 Jul 2026" → "2026-07-17" (ISO compare is fine).
+  var MONTHS = { 'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
+    'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12' };
+  function isoDate(d) {
+    var m = /(\d+)\s+(\w+)\s+(\d{4})/.exec(d || '');
+    if (m) return m[3] + '-' + (MONTHS[m[2]] || '01') + '-' + ('0' + m[1]).slice(-2);
+    return d || '';
+  }
+  // Circular 139: from 2026-08-31 a 2-hour class counts as 1.5h.
+  function hoursFor(timing, dateStr) {
+    var h = hoursOf(timing);
+    if (h === 2 && isoDate(dateStr) >= '2026-08-31') return 1.5;
+    return h;
+  }
+
   // Single reusable toast element — updated in place, no stacking.
   var toastEl = null;
   function toast(msg, color, ms) {
@@ -115,11 +130,11 @@
                 isActivity: code.indexOf('ECA') === 0 || code.indexOf('SDCP') === 0
               },
               sessions: sessions.map(function (x) {
-                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursOf(x.timing) };
+                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursFor(x.timing, x.date) };
               }),
               stats: {
-                presentHours: present.reduce(function (a, x) { return a + hoursOf(x.timing); }, 0),
-                totalHours: conducted.reduce(function (a, x) { return a + hoursOf(x.timing); }, 0),
+                presentHours: present.reduce(function (a, x) { return a + hoursFor(x.timing, x.date); }, 0),
+                totalHours: conducted.reduce(function (a, x) { return a + hoursFor(x.timing, x.date); }, 0),
                 percentage: 0
               }
             };

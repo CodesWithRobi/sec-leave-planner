@@ -33,6 +33,29 @@ export function formatClasses(hours: number, avgHoursPerClass = 2): string {
   return `${displayClasses} classes (${hours}h)`
 }
 
+/** Circular 139 (learner.saveetha.in/academics/circulars/139/): from this
+ *  date, every 2-hour class counts as 1.5h for attendance purposes. */
+export const CIRCULAR_DATE = '2026-08-31'
+
+/** Base hours from the CLS span in `timing` (e.g. "CLS10-12" → 2), falling
+ *  back to the stored/imported hours. */
+function baseHoursOf(s: Session): number {
+  const m = s.timing && s.timing.match(/CLS(\d+)-(\d+)/)
+  if (m) return parseInt(m[2], 10) - parseInt(m[1], 10)
+  return s.hours || 2
+}
+
+/** Effective credit hours for a session. 2h classes on/after CIRCULAR_DATE
+ *  count as 1.5h (circular 139); 1h (SDCP) and 1.5h (mentor) classes and
+ *  everything before the date are unchanged. The single source of truth for
+ *  all hour arithmetic, so already-imported data normalizes without a
+ *  re-import. */
+export function sessionHours(s: Session): number {
+  const h = baseHoursOf(s)
+  if (h === 2 && parseSessionDate(s.date) >= CIRCULAR_DATE) return 1.5
+  return h
+}
+
 /** Filter sessions: exclude HOLIDAY and UPCOMING, keep PRESENT/ABSENT */
 export function conductedSessions(sessions: Session[]): Session[] {
   return sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
@@ -58,9 +81,9 @@ export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>):
   const present = presentSessions(slotDetail.sessions)
   const future = upcomingSessions(slotDetail.sessions, holidays)
 
-  const presentHours = present.reduce((sum, s) => sum + s.hours, 0)
-  const totalHours = conducted.reduce((sum, s) => sum + s.hours, 0)
-  const remainingHours = future.reduce((sum, s) => sum + s.hours, 0)
+  const presentHours = present.reduce((sum, s) => sum + sessionHours(s), 0)
+  const totalHours = conducted.reduce((sum, s) => sum + sessionHours(s), 0)
+  const remainingHours = future.reduce((sum, s) => sum + sessionHours(s), 0)
 
   const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
 
@@ -72,10 +95,13 @@ export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>):
   const budgetSessions = Math.floor(budgetHours / avgSessionHours)
 
   return {
+    presentSessions: present.length,
+    totalSessions: conducted.length,
     presentHours,
     totalHours,
     percentage: Math.round(percentage * 100) / 100,
     remainingHours,
+    remainingSessions: future.length,
     budgetHours: Math.round(budgetHours * 100) / 100,
     budgetSessions,
     zone: getZone(percentage),
@@ -95,29 +121,36 @@ export function computeOverallStats(
   let presentHours = 0
   let totalHours = 0
   let remainingHours = 0
-  let remainingSessions = 0
+  let presentCount = 0
+  let totalCount = 0
+  let remainingCount = 0
 
   for (const sd of filtered) {
     const conducted = conductedSessions(sd.sessions)
     const present = presentSessions(sd.sessions)
     const future = upcomingSessions(sd.sessions, holidays)
 
-    presentHours += present.reduce((sum, s) => sum + s.hours, 0)
-    totalHours += conducted.reduce((sum, s) => sum + s.hours, 0)
-    remainingHours += future.reduce((sum, s) => sum + s.hours, 0)
-    remainingSessions += future.length
+    presentHours += present.reduce((sum, s) => sum + sessionHours(s), 0)
+    totalHours += conducted.reduce((sum, s) => sum + sessionHours(s), 0)
+    remainingHours += future.reduce((sum, s) => sum + sessionHours(s), 0)
+    presentCount += present.length
+    totalCount += conducted.length
+    remainingCount += future.length
   }
 
   const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
   const maxMiss = presentHours + remainingHours - 0.8 * (totalHours + remainingHours)
   const budgetHours = Math.max(0, maxMiss)
-  const avgSessionHours = remainingSessions > 0 ? remainingHours / remainingSessions : 2
+  const avgSessionHours = remainingCount > 0 ? remainingHours / remainingCount : 2
 
   return {
+    presentSessions: presentCount,
+    totalSessions: totalCount,
     presentHours,
     totalHours,
     percentage: Math.round(percentage * 100) / 100,
     remainingHours,
+    remainingSessions: remainingCount,
     budgetHours: Math.round(budgetHours * 100) / 100,
     budgetSessions: Math.floor(budgetHours / avgSessionHours),
     zone: getZone(percentage),
@@ -247,7 +280,7 @@ export function computeLeavePlanImpact(
         const isoDate = parseSessionDate(s.date)
         // Only upcoming classes can be covered — a leave affects only future days
         if (leaveDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
-          dateHours.set(isoDate, (dateHours.get(isoDate) || 0) + s.hours)
+          dateHours.set(isoDate, (dateHours.get(isoDate) || 0) + sessionHours(s))
         }
       }
     }
@@ -262,7 +295,7 @@ export function computeLeavePlanImpact(
   // Compute before stats
   const beforeOverall = computeOverallStats(adjusted, holidays)
 
-  const perSubject: Record<string, { before: number; after: number; zone: import('./types').VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number }> = {}
+  const perSubject: Record<string, { before: number; after: number; zone: import('./types').VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number; remainingBudgetSessions: number }> = {}
   let hoursMissed = 0
   let sessionsMissed = 0
 
@@ -276,7 +309,7 @@ export function computeLeavePlanImpact(
         s.status === 'UPCOMING'
     })
 
-    const missedHours = missed.reduce((sum, s) => sum + s.hours, 0)
+    const missedHours = missed.reduce((sum, s) => sum + sessionHours(s), 0)
     hoursMissed += missedHours
     sessionsMissed += missed.length
 
@@ -296,8 +329,9 @@ export function computeLeavePlanImpact(
       after: afterStats.percentage,
       zone: afterStats.zone,
       missedHours,
-      missedClasses: Math.round(missedHours / 2 * 10) / 10,
+      missedClasses: missed.length,
       remainingBudget: afterStats.budgetHours,
+      remainingBudgetSessions: afterStats.budgetSessions,
     }
   }
 
@@ -318,7 +352,7 @@ export function computeLeavePlanImpact(
   // Future hours still to be attended after the leave plan (holidays excluded already)
   let remainingAfter = 0
   for (const sd of adjustedOverall) {
-    remainingAfter += upcomingSessions(sd.sessions, holidays).reduce((sum, s) => sum + s.hours, 0)
+    remainingAfter += upcomingSessions(sd.sessions, holidays).reduce((sum, s) => sum + sessionHours(s), 0)
   }
 
   const denominator = afterOverall.totalHours + remainingAfter
