@@ -27,6 +27,7 @@ export interface Session {
   timing: string        // "CLS10-12"
   time?: string         // "10:00 - 11:59" — as imported from the portal
   hours: number         // 2.0 for regular, 1.5 for mentor meet, 1.0 for SDCP
+  calculation?: string  // "Counts 1.50 as Present" — scraped from portal (exact credit when present)
   status: SessionStatus
 }
 

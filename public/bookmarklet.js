@@ -24,27 +24,64 @@
   var TERM = 8;
   var BASE = '/academics/calculate-my-attendance';
 
-  function hoursOf(timing) {
-    if (!timing) return 2;
-    if (timing.indexOf('MENTOR MEET') === 0) return 1.5;
-    if (timing.indexOf('SWH') === 0) return 1;
-    var m = timing.match(/CLS(\d+)-(\d+)/);
-    if (m) return parseInt(m[2], 10) - parseInt(m[1], 10);
-    return 2;
-  }
+  var CIRCULAR = '2026-08-31';
 
-  // Portal dates look like "17 Jul 2026" → "2026-07-17" (ISO compare is fine).
+  // --- Parse helpers (all ES5) ---
+
   var MONTHS = { 'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
     'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12' };
+
+  /** "17 Jul 2026" → "2026-07-17" */
   function isoDate(d) {
     var m = /(\d+)\s+(\w+)\s+(\d{4})/.exec(d || '');
     if (m) return m[3] + '-' + (MONTHS[m[2]] || '01') + '-' + ('0' + m[1]).slice(-2);
     return d || '';
   }
-  // Circular 139: from 2026-08-31 a 2-hour class counts as 1.5h.
-  function hoursFor(timing, dateStr) {
-    var h = hoursOf(timing);
-    if (h === 2 && isoDate(dateStr) >= '2026-08-31') return 1.5;
+
+  /** "Counts 1.50 as Present" → 1.5  |  "Not counted: Upcoming" → null */
+  function parseCalc(s) {
+    var m = /Counts\s+([\d.]+)/.exec(s || '');
+    return m ? parseFloat(m[1]) : null;
+  }
+
+  function round05(h) { return Math.round(h * 20) / 20; }
+
+  /** "04:30" → 4.5   "03" → 3   null on junk */
+  function parseHHMM(t) {
+    var m = /^(\d{1,2})(?::(\d{2}))?$/.exec(String(t).trim());
+    if (!m) return null;
+    return parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 60 : 0);
+  }
+
+  /** "15:00 - 16:29" → 1.5  |  null when unparseable */
+  function spanHours(timeStr) {
+    var parts = (timeStr || '').split(' - ');
+    var a = parseHHMM(parts[0]), b = parseHHMM(parts[1]);
+    if (a === null || b === null || b <= a) return null;
+    return round05(b - a);
+  }
+
+  /** Timing-only fallback: "CLS10-12" → 2, "CLS03-04:30" → 1.5, "SWH01" → 1, "MENTOR MEET-1" → 1.5 */
+  function hoursOf(timing) {
+    if (!timing) return 2;
+    if (timing.indexOf('MENTOR MEET') === 0) return 1.5;
+    if (timing.indexOf('SWH') === 0) return 1;
+    var m = timing.match(/CLS(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)/);
+    if (m) {
+      var a = parseHHMM(m[1]), b = parseHHMM(m[2]);
+      if (a !== null && b !== null && b > a) return round05(b - a);
+    }
+    return 2;
+  }
+
+  /** Hour credit for a session row.
+   *  Priority: portal calculation text (exact) → time-span minutes → timing
+   *  heuristics → default 2. Circular 139 halves a 2h class on/after Aug 31. */
+  function hoursFor(row) {
+    var calc = parseCalc(row.calculation);
+    var h = (calc !== null) ? calc : spanHours(row.time);
+    if (h === null) h = hoursOf(row.timing);
+    if (h === 2 && isoDate(row.date) >= CIRCULAR) return 1.5;
     return h;
   }
 
@@ -130,11 +167,11 @@
                 isActivity: code.indexOf('ECA') === 0 || code.indexOf('SDCP') === 0
               },
               sessions: sessions.map(function (x) {
-                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursFor(x.timing, x.date) };
+                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursFor(x) };
               }),
               stats: {
-                presentHours: present.reduce(function (a, x) { return a + hoursFor(x.timing, x.date); }, 0),
-                totalHours: conducted.reduce(function (a, x) { return a + hoursFor(x.timing, x.date); }, 0),
+                presentHours: present.reduce(function (a, x) { return a + hoursFor(x); }, 0),
+                totalHours: conducted.reduce(function (a, x) { return a + hoursFor(x); }, 0),
                 percentage: 0
               }
             };

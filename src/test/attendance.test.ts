@@ -13,7 +13,7 @@ import {
   sessionHours,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
-import type { Session, ODEntry } from '../engine/types'
+import type { Session, SlotDetail, ODEntry } from '../engine/types'
 
 const od = (partial: Partial<ODEntry>): ODEntry => ({
   id: 'od-test',
@@ -314,6 +314,78 @@ describe('sessionHours (circular 139: every 2h class from 2026-08-31 = 1.5h)', (
     expect(overall.remainingSessions).toBe(58)
     expect(overall.presentSessions).toBe(71)
     expect(overall.totalSessions).toBe(86)
+  })
+})
+
+describe('sessionHours — real portal formats (live-audit regression)', () => {
+  // Shapes captured from learner.saveetha.in term 8, Aug 31 2026:
+  const s = (partial: Partial<Session>): Session => ({
+    slotId: 1, date: '2026-09-01', startTime: '', endTime: '', timing: '', hours: 0,
+    status: 'UPCOMING', ...partial,
+  })
+
+  it('HH:MM end-time CLS formats parse as 1.5h (previously 1h)', () => {
+    // Bug: CLS\d+-\d+ parsed "CLS03-04:30" as 4-3=1. All of these are 1.5h blocks.
+    expect(sessionHours(s({ timing: 'CLS03-04:30' }))).toBe(1.5)
+    expect(sessionHours(s({ timing: 'CLS08-09:30' }))).toBe(1.5)
+    expect(sessionHours(s({ timing: 'CLS09:45-11:15' }))).toBe(1.5)
+    expect(sessionHours(s({ timing: 'CLS01:15-02:45' }))).toBe(1.5)
+  })
+
+  it('time-span minutes derive hours (89 min → 1.5, 120 → 2, 60 → 1)', () => {
+    expect(sessionHours(s({ time: '15:00 - 16:29' }))).toBe(1.5)
+    expect(sessionHours(s({ time: '08:00 - 09:29' }))).toBe(1.5)
+    // 10:00-11:59 = 119 min → 2h; pre-circular date keeps it 2h
+    expect(sessionHours(s({ time: '10:00 - 11:59', date: '2026-08-28' }))).toBe(2)
+    expect(sessionHours(s({ time: '08:00 - 09:00' }))).toBe(1)
+  })
+
+  it('portal calculation text is the exact credit, beating span/timing', () => {
+    expect(sessionHours(s({
+      timing: 'CLS03-04:30', time: '15:00 - 16:29',
+      calculation: 'Counts 1.50 as Present',
+    }))).toBe(1.5)
+    expect(sessionHours(s({
+      timing: 'CLS10-12', time: '10:00 - 11:59', date: '2026-08-14',
+      calculation: 'Counts 2.00 as Absent',
+    }))).toBe(2)
+    // 44-min mentor: portal credit 0.45 is NOT hour-rounded to 0.75
+    expect(sessionHours(s({
+      timing: 'CLS11:30-12:15', time: '11:30 - 12:14', date: '2026-08-31',
+      calculation: 'Counts 0.45 as Present',
+    }))).toBe(0.45)
+  })
+
+  it('"Not counted: Upcoming" yields no calc → falls back to span/timing', () => {
+    expect(sessionHours(s({
+      timing: 'CLS03-04:30', time: '15:00 - 16:29',
+      calculation: 'Not counted: Upcoming',
+    }))).toBe(1.5)
+    expect(sessionHours(s({ timing: 'SWH01', calculation: 'Not counted: Upcoming' }))).toBe(1)
+  })
+
+  it('old exports normalize without re-import (stored 1h + real span → 1.5h)', () => {
+    // Pre-fix bookmarklet exported CLS03-04:30 sessions with hours:1.
+    expect(sessionHours(s({ timing: 'CLS03-04:30', time: '15:00 - 16:29', hours: 1 }))).toBe(1.5)
+  })
+
+  it('circular still halves span-derived 2h on/after Aug 31', () => {
+    expect(sessionHours(s({ time: '08:00 - 10:00', date: '2026-08-28' }))).toBe(2)
+    expect(sessionHours(s({ time: '08:00 - 10:00', date: '2026-08-31' }))).toBe(1.5)
+  })
+
+  it('leave arithmetic uses 1.5h for HH:MM-timing upcoming sessions', () => {
+    const slot: SlotDetail = {
+      slot: { id: 9, slotName: 'X', subjectCode: '19AI404', subjectName: 'AoA', isActivity: false },
+      sessions: [
+        s({ date: '2026-08-28', timing: 'CLS15-17', time: '15:00 - 16:59', hours: 2, status: 'PRESENT' }),
+        s({ date: '2026-09-03', timing: 'CLS03-04:30', time: '15:00 - 16:29' }),
+      ],
+      stats: { presentHours: 0, totalHours: 0, percentage: 0 },
+    }
+    const impact = computeLeaveImpact([slot], new Set(), '2026-09-03', '2026-09-03')
+    expect(impact.sessionsMissed).toBe(1)
+    expect(impact.hoursMissed).toBe(1.5)
   })
 })
 

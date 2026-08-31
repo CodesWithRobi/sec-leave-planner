@@ -37,21 +37,53 @@ export function formatClasses(hours: number, avgHoursPerClass = 2): string {
  *  date, every 2-hour class counts as 1.5h for attendance purposes. */
 export const CIRCULAR_DATE = '2026-08-31'
 
-/** Base hours from the CLS span in `timing` (e.g. "CLS10-12" → 2), falling
- *  back to the stored/imported hours. */
-function baseHoursOf(s: Session): number {
-  const m = s.timing && s.timing.match(/CLS(\d+)-(\d+)/)
-  if (m) return parseInt(m[2], 10) - parseInt(m[1], 10)
-  return s.hours || 2
+const CALC_RE = /Counts\s+([\d.]+)/
+
+/** Parse "03" → 3, "04:30" → 4.5 */
+function parseClock(t: string): number | null {
+  const m = /^(\d{1,2})(?::(\d{2}))?$/.exec(t.trim())
+  if (!m) return null
+  return parseInt(m[1], 10) + (m[2] ? parseInt(m[2], 10) / 60 : 0)
 }
 
-/** Effective credit hours for a session. 2h classes on/after CIRCULAR_DATE
- *  count as 1.5h (circular 139); 1h (SDCP) and 1.5h (mentor) classes and
- *  everything before the date are unchanged. The single source of truth for
- *  all hour arithmetic, so already-imported data normalizes without a
- *  re-import. */
+function round05(h: number): number {
+  return Math.round(h * 20) / 20
+}
+
+/** Hours from the time-column span "HH:MM - HH:MM", or null. */
+function spanHoursOf(s: Session): number | null {
+  const pair = sessionTimeRange(s)
+  if (!pair) return null
+  const [a, b] = pair
+  const start = parseClock(a)
+  const end = parseClock(b)
+  if (start === null || end === null || end <= start) return null
+  return round05(end - start)
+}
+
+/** Hours from the timing string heuristics, or null when unparseable. */
+function timingHoursOf(s: Session): number | null {
+  const t = s.timing || ''
+  if (t.indexOf('MENTOR MEET') === 0) return 1.5
+  if (t.indexOf('SWH') === 0) return 1
+  // HH:MM-aware: CLS03-04:30 → 1.5, CLS09:45-11:15 → 1.5, CLS10-12 → 2
+  const m = t.match(/CLS(\d{1,2}(?::\d{2})?)-(\d{1,2}(?::\d{2})?)/)
+  if (m) {
+    const a = parseClock(m[1])
+    const b = parseClock(m[2])
+    if (a !== null && b !== null && b > a) return round05(b - a)
+  }
+  return null
+}
+
+/** Effective credit hours for one session.
+ *  Priority: portal `calculation` text (exact per-session credit) → time span
+ *  (minutes/60 rounded to 0.05) → timing heuristics → stored hours → default 2.
+ *  Circular 139 halves a 2-hour class on/after CIRCULAR_DATE regardless of source. */
 export function sessionHours(s: Session): number {
-  const h = baseHoursOf(s)
+  const calc = s.calculation ? s.calculation.match(CALC_RE) : null
+  const h = calc ? parseFloat(calc[1])
+    : (spanHoursOf(s) ?? timingHoursOf(s) ?? (s.hours || 2))
   if (h === 2 && parseSessionDate(s.date) >= CIRCULAR_DATE) return 1.5
   return h
 }
