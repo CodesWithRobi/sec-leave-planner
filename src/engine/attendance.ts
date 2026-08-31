@@ -422,13 +422,17 @@ export function computeLeaveImpact(
   return computeLeavePlanImpact(slotDetails, holidays, [{ id: 'window', startDate, endDate }], overrides, rpLeaves)
 }
 
-/** Find ranked vacation windows */
+/** Find ranked vacation windows, accounting for leave already in `plan`.
+ *  Each candidate is evaluated as `plan + window` (overlapping dates counted
+ *  once), so windows that would push the combined projection below the 80%
+ *  target are not offered. */
 export function findVacationWindows(
   slotDetails: SlotDetail[],
   holidays: Set<string>,
   maxDays: number = 30,
   overrides: DateOverride[] = [],
   rpLeaves: number = 0,
+  plan: LeaveRange[] = [],
 ): VacationWindow[] {
   const windows: VacationWindow[] = []
   const today = new Date()
@@ -446,7 +450,8 @@ export function findVacationWindows(
       end.setDate(end.getDate() + length - 1)
       const endStr = toLocalISODate(end)
 
-      const impact = computeLeaveImpact(
+      // This window's own cost (marginal, on top of any existing plan).
+      const windowImpact = computeLeaveImpact(
         slotDetails,
         holidays,
         startStr,
@@ -455,12 +460,27 @@ export function findVacationWindows(
         rpLeaves
       )
 
-      // Stop extending if projected overall drops below the 80% target
-      if (impact.overallFinalZone !== 'green') break
+      // Combined = existing plan + this window. The 80% gate runs on the
+      // combined projection: a window is only offered if, after your planned
+      // leave is already committed, it keeps you at the green target.
+      const combinedImpact = computeLeavePlanImpact(
+        slotDetails,
+        holidays,
+        [...plan, { id: 'window', startDate: startStr, endDate: endStr }],
+        overrides,
+        rpLeaves
+      )
+      if (combinedImpact.overallFinalZone !== 'green') break
 
-      // Count free days before/after
       const freeBefore = countFreeDaysBefore(start, holidays)
       const freeAfter = countFreeDaysAfter(end, holidays)
+
+      const impact = {
+        ...windowImpact,
+        overallFinal: combinedImpact.overallFinal,
+        overallFinalZone: combinedImpact.overallFinalZone,
+        overallAfter: combinedImpact.overallAfter,
+      }
 
       windows.push({
         ...impact,

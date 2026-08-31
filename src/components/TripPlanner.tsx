@@ -19,15 +19,16 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
   const [rpLeaves, setRpLeaves] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
 
-  const windows = useMemo(() => {
-    if (slots.length === 0) return []
-    return findVacationWindows(slots, holidays, maxDays, overrides, rpLeaves)
-  }, [slots, holidays, maxDays, overrides, rpLeaves])
-
   const validPlan = useMemo(
     () => plan.filter(r => r.startDate && r.endDate && r.startDate <= r.endDate),
     [plan]
   )
+
+  const windows = useMemo(() => {
+    if (slots.length === 0) return []
+    return findVacationWindows(slots, holidays, maxDays, overrides, rpLeaves, validPlan)
+  }, [slots, holidays, maxDays, overrides, rpLeaves, validPlan])
+
   const planImpact = useMemo(
     () => validPlan.length > 0
       ? computeLeavePlanImpact(slots, holidays, validPlan, overrides, rpLeaves)

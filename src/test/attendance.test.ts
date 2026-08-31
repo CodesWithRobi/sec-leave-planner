@@ -267,6 +267,28 @@ describe('findVacationWindows', () => {
       expect(w.overallFinalZone).toBe('green')
     }
   })
+
+  it('re-ranks windows and drops overshoot trips when a leave plan is committed', () => {
+    // Baseline: the fattest trip takes the whole budget to 80.83%
+    const noPlan = findVacationWindows(ALL_SLOTS, HOLIDAYS, 30)
+    const noPlanBest = noPlan[0]
+    expect(noPlanBest.totalCalendarDays).toBeGreaterThan(14)
+
+    // Committing leave on 09-03 spends part of the budget, so windows must
+    // shorten and the previously-best 18-day window must disappear.
+    const plan = [{ id: 'p', startDate: '2026-09-03', endDate: '2026-09-03' }]
+    const withPlan = findVacationWindows(ALL_SLOTS, HOLIDAYS, 30, [], 0, plan)
+
+    expect(withPlan.length).toBeGreaterThan(0)
+    // The no-plan best window either shrank or is gone; nothing stays as long.
+    expect(withPlan[0].totalCalendarDays).toBeLessThan(noPlanBest.totalCalendarDays)
+
+    // The plan's 09-03 is baked into the gate: every offered window stays green
+    // even after that leave is already committed.
+    for (const w of withPlan) {
+      expect(w.overallFinalZone).toBe('green')
+    }
+  })
 })
 
 describe('parseSessionDate', () => {
