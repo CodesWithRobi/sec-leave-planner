@@ -454,6 +454,13 @@ export function findVacationWindows(
   // optimistic "do everything else" number.
   const planBaseline = computeLeavePlanImpact(slotDetails, holidays, plan, overrides, rpLeaves)
 
+  // Only real courses must hold the 80% per-subject bar. Activities (ECA/SDCP)
+  // add hours to the overall pool but carry no per-subject rule, so they never
+  // block a trip on their own.
+  const courseCodes = new Set(
+    slotDetails.filter(sd => !sd.slot.isActivity).map(sd => sd.slot.subjectCode)
+  )
+
   // Scan from today forward
   for (let startOffset = 0; startOffset < maxDays; startOffset++) {
     const start = new Date(today)
@@ -486,12 +493,13 @@ export function findVacationWindows(
       )
       // Gate 1 (overall): combined projection at/above the 80% green target.
       if (combinedImpact.overallFinalZone !== 'green') break
-      // Gate 2 (per subject): no subject that the plan kept at/above 80% is
-      // pushed below 80% by adding this window. Subjects already below 80% in
-      // the committed plan (e.g. a short mentor/SDCP) do not block trips —
-      // this window is not what drops them.
+      // Gate 2 (per subject, courses only): no real course that the plan kept
+      // at/above 80% is pushed below 80% by adding this window. Activities
+      // (ECA/SDCP) already below 80% do not block trips — this window is not
+      // what drops them, and they only move the overall pool.
       let subjectBreach = false
       for (const code of Object.keys(combinedImpact.perSubject)) {
+        if (!courseCodes.has(code)) continue
         const baselineProj = planBaseline.perSubject[code]?.projected ?? 100
         const combinedProj = combinedImpact.perSubject[code]?.projected ?? 100
         if (baselineProj >= GREEN_THRESHOLD && combinedProj < GREEN_THRESHOLD) {

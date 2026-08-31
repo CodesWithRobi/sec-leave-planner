@@ -279,8 +279,9 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                       )
                     })}
                     <p className="text-[11px] text-gray-400 pt-1">
-                      % shown is the projected attendance if you attend every non-leave class. A subject that
-                      stays ≥80% before the trip is never offered with a trip that drops it below 80%.
+                      % shown is the projected attendance if you attend every non-leave class. Every real
+                      course that stays ≥80% before the trip is never offered a trip that drops it below 80%;
+                      activities (ECA/SDCP) only move the overall pool and don't block trips.
                     </p>
                   </div>
                 )}
