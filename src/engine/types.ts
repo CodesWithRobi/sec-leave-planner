@@ -103,12 +103,28 @@ export interface LeaveImpact {
   hoursMissed: number
   rpLeavesUsed: number
   rpCoveredDates: string[]   // ISO dates covered by RP leave
-  perSubject: Record<string, { before: number; after: number; zone: VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number; remainingBudgetSessions: number }>
+  perSubject: Record<string, SubjectImpact>
   overallBefore: number
   overallAfter: number
   overallFinal: number
   overallZone: VerdictZone
   overallFinalZone: VerdictZone
+}
+
+/** One subject's leave impact.
+ *  before = attendance if the term ended today, before any leave.
+ *  after  = attendance if the term ended today, with the leave applied.
+ *  projected = attendance if every non-leave future session is attended
+ *              (mirrors overallFinal, per subject). */
+export interface SubjectImpact {
+  before: number
+  after: number
+  projected: number
+  zone: VerdictZone
+  missedHours: number
+  missedClasses: number
+  remainingBudget: number
+  remainingBudgetSessions: number
 }
 
 /** Vacation window (ranked) */

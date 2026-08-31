@@ -1,4 +1,4 @@
-import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow } from './types'
+import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow, SubjectImpact } from './types'
 
 // Zone thresholds
 const GREEN_THRESHOLD = 80
@@ -327,7 +327,7 @@ export function computeLeavePlanImpact(
   // Compute before stats
   const beforeOverall = computeOverallStats(adjusted, holidays)
 
-  const perSubject: Record<string, { before: number; after: number; zone: import('./types').VerdictZone; missedHours: number; missedClasses: number; remainingBudget: number; remainingBudgetSessions: number }> = {}
+  const perSubject: Record<string, SubjectImpact> = {}
   let hoursMissed = 0
   let sessionsMissed = 0
 
@@ -356,9 +356,18 @@ export function computeLeavePlanImpact(
 
     const afterStats = computeSlotStats({ ...sd, sessions: adjustedSessions }, holidays)
 
+    // Projected per subject = attend every non-leave future session (mirrors overallFinal)
+    const remainingAfter = upcomingSessions(adjustedSessions, holidays)
+      .reduce((sum, s) => sum + sessionHours(s), 0)
+    const projectedDenominator = afterStats.totalHours + remainingAfter
+    const projected = projectedDenominator > 0
+      ? ((afterStats.presentHours + remainingAfter) / projectedDenominator) * 100
+      : afterStats.percentage
+
     perSubject[sd.slot.subjectCode] = {
       before: before.percentage,
       after: afterStats.percentage,
+      projected: Math.round(projected * 100) / 100,
       zone: afterStats.zone,
       missedHours,
       missedClasses: missed.length,
@@ -438,6 +447,13 @@ export function findVacationWindows(
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
+  // Baseline projection of the committed plan alone (no added window). Used to
+  // tell whether a trip is the thing that pushes a subject below the target,
+  // vs. a subject already short for other reasons (which trips cannot fix).
+  // The false flag means every extra session is attended, so projected is the
+  // optimistic "do everything else" number.
+  const planBaseline = computeLeavePlanImpact(slotDetails, holidays, plan, overrides, rpLeaves)
+
   // Scan from today forward
   for (let startOffset = 0; startOffset < maxDays; startOffset++) {
     const start = new Date(today)
@@ -460,9 +476,7 @@ export function findVacationWindows(
         rpLeaves
       )
 
-      // Combined = existing plan + this window. The 80% gate runs on the
-      // combined projection: a window is only offered if, after your planned
-      // leave is already committed, it keeps you at the green target.
+      // Combined = existing plan + this window.
       const combinedImpact = computeLeavePlanImpact(
         slotDetails,
         holidays,
@@ -470,7 +484,22 @@ export function findVacationWindows(
         overrides,
         rpLeaves
       )
+      // Gate 1 (overall): combined projection at/above the 80% green target.
       if (combinedImpact.overallFinalZone !== 'green') break
+      // Gate 2 (per subject): no subject that the plan kept at/above 80% is
+      // pushed below 80% by adding this window. Subjects already below 80% in
+      // the committed plan (e.g. a short mentor/SDCP) do not block trips —
+      // this window is not what drops them.
+      let subjectBreach = false
+      for (const code of Object.keys(combinedImpact.perSubject)) {
+        const baselineProj = planBaseline.perSubject[code]?.projected ?? 100
+        const combinedProj = combinedImpact.perSubject[code]?.projected ?? 100
+        if (baselineProj >= GREEN_THRESHOLD && combinedProj < GREEN_THRESHOLD) {
+          subjectBreach = true
+          break
+        }
+      }
+      if (subjectBreach) break
 
       const freeBefore = countFreeDaysBefore(start, holidays)
       const freeAfter = countFreeDaysAfter(end, holidays)

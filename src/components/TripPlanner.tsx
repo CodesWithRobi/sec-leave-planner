@@ -246,6 +246,7 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                     <div className="text-xs font-medium text-gray-500 mb-2">Per-subject impact</div>
                     {Object.entries(w.perSubject).map(([code, data]) => {
                       const isActivity = code === 'SDCP' || code.startsWith('ECA')
+                      const projZone = data.projected >= 80 ? 'green' : data.projected >= 75 ? 'amber' : 'red'
                       return (
                         <div key={code} className="flex items-center justify-between py-1 text-xs">
                           <span className="font-medium">{code}</span>
@@ -254,15 +255,15 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                             <span className="text-gray-300">&rarr;</span>
                             {isActivity ? (
                               <span className="font-bold px-2 py-0.5 rounded text-gray-500 bg-gray-50">
-                                {data.after}%
+                                {data.projected}%
                               </span>
                             ) : (
                               <span className={`font-bold px-2 py-0.5 rounded ${
-                                data.zone === 'green' ? 'text-green-600 bg-green-50' :
-                                data.zone === 'amber' ? 'text-amber-600 bg-amber-50' :
+                                projZone === 'green' ? 'text-green-600 bg-green-50' :
+                                projZone === 'amber' ? 'text-amber-600 bg-amber-50' :
                                 'text-red-600 bg-red-50'
                               }`}>
-                                {data.after}%
+                                {data.projected}%
                               </span>
                             )}
                             <span className="text-gray-400 w-20 text-right">
@@ -277,6 +278,10 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
                         </div>
                       )
                     })}
+                    <p className="text-[11px] text-gray-400 pt-1">
+                      % shown is the projected attendance if you attend every non-leave class. A subject that
+                      stays ≥80% before the trip is never offered with a trip that drops it below 80%.
+                    </p>
                   </div>
                 )}
               </div>
