@@ -258,6 +258,15 @@ describe('findVacationWindows', () => {
       expect(sep4Window.totalCalendarDays).toBeGreaterThan(0)
     }
   })
+
+  it('keeps every window at or above the 80% green target (no amber/red trips)', () => {
+    const windows = findVacationWindows(ALL_SLOTS, HOLIDAYS, 30)
+    expect(windows.length).toBeGreaterThan(0)
+    for (const w of windows) {
+      expect(w.overallFinal).toBeGreaterThanOrEqual(80)
+      expect(w.overallFinalZone).toBe('green')
+    }
+  })
 })
 
 describe('parseSessionDate', () => {

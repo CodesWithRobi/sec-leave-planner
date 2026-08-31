@@ -455,8 +455,8 @@ export function findVacationWindows(
         rpLeaves
       )
 
-      // Stop extending if projected overall drops below 75% (hard danger)
-      if (impact.overallFinalZone === 'red') break
+      // Stop extending if projected overall drops below the 80% target
+      if (impact.overallFinalZone !== 'green') break
 
       // Count free days before/after
       const freeBefore = countFreeDaysBefore(start, holidays)
