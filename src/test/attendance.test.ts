@@ -11,6 +11,8 @@ import {
   applyOverrides,
   applyODs,
   sessionHours,
+  mapSessionStatus,
+  normalizeAttendanceData,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
 import type { Session, SlotDetail, ODEntry } from '../engine/types'
@@ -529,5 +531,62 @@ describe('applyODs (On Duty)', () => {
     expect(out.find(s => s.date === '2026-08-15')!.status).toBe('HOLIDAY')
     const again = applyOverrides(out, [{ date: '2026-08-15', type: 'holiday' }])
     expect(again.find(s => s.date === '2026-08-15')!.status).toBe('HOLIDAY')
+  })
+})
+
+describe('GatePass handling (hosteller leave counts as ABSENT)', () => {
+  // The import boundary receives RAW portal data: status is a plain string
+  // that normalization folds into the SessionStatus model. Type it loosely to
+  // represent data as it arrives from the portal, which may not be a valid
+  // SessionStatus yet.
+  const rawSession = (partial: Partial<Omit<Session, 'status'>> & { status?: string }): Session => ({
+    slotId: 1, date: '2026-09-01', startTime: '', endTime: '', timing: '', hours: 2, status: 'PRESENT',
+    ...partial,
+  } as Session)
+  const rawSlot = (sessions: Session[]): SlotDetail => ({
+    slot: { id: 1, slotName: 'X', subjectCode: '19XX', subjectName: 'X', isActivity: false },
+    sessions,
+    stats: { presentHours: 2, totalHours: 4, percentage: 50 },
+  })
+
+  it('mapSessionStatus folds GatePass variants into ABSENT', () => {
+    expect(mapSessionStatus('GatePass')).toBe('ABSENT')
+    expect(mapSessionStatus('GATEPASS')).toBe('ABSENT')
+    expect(mapSessionStatus('Gate Pass')).toBe('ABSENT')
+    expect(mapSessionStatus('gate_pass')).toBe('ABSENT')
+    expect(mapSessionStatus('PRESENT')).toBe('PRESENT')
+    expect(mapSessionStatus('ABSENT')).toBe('ABSENT')
+    expect(mapSessionStatus('UPCOMING')).toBe('UPCOMING')
+    expect(mapSessionStatus('HOLIDAY')).toBe('HOLIDAY')
+  })
+
+  it('GatePass hours count in the denominator like ABSENT (attendance drops)', () => {
+    // 2 conducted: one PRESENT, one marked GatePass → should be 50%, like ABSENT
+    const gpSlot = rawSlot([
+      rawSession({ date: '2026-08-01', status: 'PRESENT', hours: 2 }),
+      rawSession({ date: '2026-08-08', status: 'GatePass', hours: 2 }),
+    ])
+    // Without normalization it is silently dropped from the denominator.
+    expect(computeSlotStats(gpSlot, HOLIDAYS).totalHours).toBe(2)
+    expect(computeSlotStats(gpSlot, HOLIDAYS).percentage).toBe(100)
+    // After normalization it is a miss, exactly like ABSENT.
+    const normalized = normalizeAttendanceData({
+      student: '', termId: 8, fetchedAt: '', slots: [gpSlot],
+    })
+    const stats = computeSlotStats(normalized.slots[0], HOLIDAYS)
+    expect(stats.totalHours).toBe(4)
+    expect(stats.percentage).toBe(50)
+  })
+
+  it('normalizeAttendanceData keeps real statuses untouched', () => {
+    const input = rawSlot([
+      rawSession({ status: 'PRESENT' }),
+      rawSession({ status: 'ABSENT' }),
+      rawSession({ status: 'UPCOMING' }),
+      rawSession({ status: 'GatePass' }),
+    ])
+    const out = normalizeAttendanceData({ student: '', termId: 8, fetchedAt: '', slots: [input] })
+    const statuses = out.slots[0].sessions.map(s => s.status)
+    expect(statuses).toEqual(['PRESENT', 'ABSENT', 'UPCOMING', 'ABSENT'])
   })
 })

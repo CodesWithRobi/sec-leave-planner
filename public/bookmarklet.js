@@ -155,7 +155,7 @@
             });
             var present = sessions.filter(function (x) { return x.status === 'PRESENT'; });
             var conducted = sessions.filter(function (x) {
-              return x.status === 'PRESENT' || x.status === 'ABSENT';
+              return x.status === 'PRESENT' || x.status === 'ABSENT' || x.status === 'GatePass';
             });
             var code = slot.subject_code || '';
             return {

@@ -1,4 +1,4 @@
-import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow, SubjectImpact } from './types'
+import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow, SubjectImpact, AttendanceData } from './types'
 
 // Zone thresholds
 const GREEN_THRESHOLD = 80
@@ -96,6 +96,32 @@ export function conductedSessions(sessions: Session[]): Session[] {
 /** Filter sessions: only PRESENT */
 export function presentSessions(sessions: Session[]): Session[] {
   return sessions.filter(s => s.status === 'PRESENT')
+}
+
+const KNOWN_STATUSES: ReadonlySet<string> = new Set(['PRESENT', 'ABSENT', 'HOLIDAY', 'UPCOMING'])
+const GATEPASS_STATUSES: ReadonlySet<string> = new Set(['GATEPASS', 'GATE PASS', 'GATE_PASS'])
+
+/** Map a portal status string onto the SessionStatus model, folding unknown /
+ *  non-attendance markings into ABSENT. GatePass (hostellers' leave) counts as
+ *  a conducted-but-missed class, exactly like ABSENT.
+ *  Returns the original status when it is already a known model status. */
+export function mapSessionStatus(status: string): Session['status'] {
+  const trimmed = (status || '').trim().toUpperCase()
+  if (KNOWN_STATUSES.has(trimmed)) return status as Session['status']
+  if (GATEPASS_STATUSES.has(trimmed)) return 'ABSENT'
+  // Anything else the portal may emit (e.g. "Gate Pass", "Leave") is a miss.
+  return 'ABSENT'
+}
+
+/** Normalize an imported dataset so every session status matches the model.
+ *  GatePass / other miss-markings become ABSENT so they affect the attendance
+ *  denominator instead of silently vanishing. Pure: returns a new dataset. */
+export function normalizeAttendanceData(data: AttendanceData): AttendanceData {
+  const slots = data.slots.map(sd => ({
+    ...sd,
+    sessions: sd.sessions.map(s => ({ ...s, status: mapSessionStatus(s.status) })),
+  }))
+  return { ...data, slots }
 }
 
 /** Filter future sessions (UPCOMING) excluding given holiday dates */

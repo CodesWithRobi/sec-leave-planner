@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react'
+import { normalizeAttendanceData } from '../engine/attendance'
 import type { SlotDetail, DateOverride, AttendanceData, LeaveRange, ODEntry } from '../engine/types'
 
 const STORAGE_KEY = 'sec-leave-planner-data'
@@ -16,7 +17,13 @@ export function useAttendanceStore() {
   const [slots, setSlots] = useState<SlotDetail[]>(() => {
     try {
       const raw = localStorage.getItem(STORAGE_KEY)
-      return raw ? JSON.parse(raw) : []
+      if (!raw) return []
+      const data = JSON.parse(raw)
+      // Normalize statuses already persisted (e.g. old exports holding
+      // GatePass rows) so they count toward attendance on load.
+      return Array.isArray(data)
+        ? normalizeAttendanceData({ student: '', termId: 0, fetchedAt: '', slots: data }).slots
+        : []
     } catch { return [] }
   })
 
@@ -66,8 +73,9 @@ export function useAttendanceStore() {
   }, [student])
 
   const importData = useCallback((data: AttendanceData) => {
-    setSlots(data.slots)
-    setStudent(data.student)
+    const normalized = normalizeAttendanceData(data)
+    setSlots(normalized.slots)
+    setStudent(normalized.student)
   }, [])
 
   const addOverride = useCallback((override: DateOverride) => {
