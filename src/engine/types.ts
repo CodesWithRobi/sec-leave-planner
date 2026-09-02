@@ -56,6 +56,15 @@ export interface DateOverride {
   reason?: string       // "Krishna Jayanthi", "Rain holiday"
 }
 
+/** Partial-day holiday: cancels any session whose time range overlaps
+ *  [start, end). Whole-day holidays live in the date Set instead. */
+export interface HolidayWindow {
+  date: string    // "2026-08-31"
+  start: string   // "15:00" — 24h, inclusive
+  end: string     // "16:30" — 24h, exclusive
+  label?: string
+}
+
 /** Verdict zone */
 export type VerdictZone = 'green' | 'amber' | 'red'
 

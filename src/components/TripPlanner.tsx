@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import type { SlotDetail, DateOverride, LeaveRange } from '../engine/types'
+import type { SlotDetail, DateOverride, LeaveRange, HolidayWindow } from '../engine/types'
 import { findVacationWindows, computeLeavePlanImpact } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
@@ -8,13 +8,14 @@ interface Props {
   slots: SlotDetail[]
   overrides: DateOverride[]
   holidays: Set<string>
+  holidayWindows: HolidayWindow[]
   plan: LeaveRange[]
   onAddRange: (range: Omit<LeaveRange, 'id'>) => void
   onRemoveRange: (id: string) => void
   onEditPlan: () => void
 }
 
-export default function TripPlanner({ slots, overrides, holidays, plan, onAddRange, onRemoveRange, onEditPlan }: Props) {
+export default function TripPlanner({ slots, overrides, holidays, holidayWindows, plan, onAddRange, onRemoveRange, onEditPlan }: Props) {
   const [maxDays, setMaxDays] = useState(21)
   const [rpLeaves, setRpLeaves] = useState(0)
   const [expanded, setExpanded] = useState<string | null>(null)
@@ -24,16 +25,16 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
     [plan]
   )
 
-  const windows = useMemo(() => {
+  const vacationWindows = useMemo(() => {
     if (slots.length === 0) return []
-    return findVacationWindows(slots, holidays, maxDays, overrides, rpLeaves, validPlan)
-  }, [slots, holidays, maxDays, overrides, rpLeaves, validPlan])
+    return findVacationWindows(slots, holidays, maxDays, overrides, rpLeaves, validPlan, holidayWindows)
+  }, [slots, holidays, maxDays, overrides, rpLeaves, validPlan, holidayWindows])
 
   const planImpact = useMemo(
     () => validPlan.length > 0
-      ? computeLeavePlanImpact(slots, holidays, validPlan, overrides, rpLeaves)
+      ? computeLeavePlanImpact(slots, holidays, validPlan, overrides, rpLeaves, holidayWindows)
       : null,
-    [slots, holidays, validPlan, overrides, rpLeaves]
+    [slots, holidays, validPlan, overrides, rpLeaves, holidayWindows]
   )
   const planHasOverlaps = useMemo(() => {
     for (let i = 0; i < validPlan.length; i++) {
@@ -163,7 +164,7 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
         )}
       </div>
 
-      {windows.length === 0 && (
+      {vacationWindows.length === 0 && (
         <div className="text-center py-12 text-gray-400 text-sm">
           No vacation windows found. Import your data first.
         </div>
@@ -171,7 +172,7 @@ export default function TripPlanner({ slots, overrides, holidays, plan, onAddRan
 
       <div className="space-y-3">
         <div className="space-y-3">
-          {windows.map((w) => {
+          {vacationWindows.map((w) => {
             const key = `${w.startDate}-${w.endDate}`
             const isExpanded = expanded === key
             const inPlan = isAlreadyInPlan(w.startDate, w.endDate)

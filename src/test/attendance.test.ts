@@ -11,12 +11,15 @@ import {
   applyOverrides,
   applyODs,
   sessionHours,
+  upcomingSessions,
   mapSessionStatus,
   normalizeAttendanceData,
   DEFAULT_HOLIDAYS,
+  preloadedHolidays,
+  isSessionCancelled,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
-import type { Session, SlotDetail, ODEntry } from '../engine/types'
+import type { Session, SlotDetail, ODEntry, HolidayWindow } from '../engine/types'
 
 const od = (partial: Partial<ODEntry>): ODEntry => ({
   id: 'od-test',
@@ -25,11 +28,16 @@ const od = (partial: Partial<ODEntry>): ODEntry => ({
   ...partial,
 })
 
-describe('DEFAULT_HOLIDAYS', () => {
-  it('includes the Onam celebration (2026-08-31, classes 3:00-4:30 PM cancelled)', () => {
+describe('DEFAULT_HOLIDAYS / preloadedHolidays', () => {
+  it('Onam is a PARTIAL-day holiday (3:00-4:30 PM only), not whole-day', () => {
     const onam = DEFAULT_HOLIDAYS.find(d => d.date === '2026-08-31')
     expect(onam).toBeDefined()
-    expect(onam!.label).toMatch(/Onam/)
+    expect(onam!.start).toBe('15:00')
+    expect(onam!.end).toBe('16:30')
+    const { dates, windows } = preloadedHolidays()
+    expect(dates.has('2026-08-31')).toBe(false)   // not a whole-day cancel
+    expect(dates.has('2026-08-26')).toBe(true)    // other holidays stay whole-day
+    expect(windows).toContainEqual(expect.objectContaining({ date: '2026-08-31', start: '15:00', end: '16:30' }))
   })
 
   it('has unique dates and a label per entry', () => {
@@ -603,5 +611,59 @@ describe('GatePass handling (hosteller leave counts as ABSENT)', () => {
     const out = normalizeAttendanceData({ student: '', termId: 8, fetchedAt: '', slots: [input] })
     const statuses = out.slots[0].sessions.map(s => s.status)
     expect(statuses).toEqual(['PRESENT', 'ABSENT', 'UPCOMING', 'ABSENT'])
+  })
+})
+
+describe('partial-day holiday windows (Onam: 15:00-16:30 only)', () => {
+  const ONAM: HolidayWindow[] = [{ date: '2026-08-31', start: '15:00', end: '16:30' }]
+  const noDates = new Set<string>()
+
+  const slot = (sessions: Session[]): SlotDetail => ({
+    slot: { id: 1, slotName: 'X', subjectCode: '19XX', subjectName: 'X', isActivity: false },
+    sessions,
+    stats: { presentHours: 0, totalHours: 0, percentage: 100 },
+  })
+
+  it('cancels only sessions whose time range overlaps the window', () => {
+    // Sessions carry times in `time` ("HH:MM - HH:MM") like real portal imports.
+    const s = (time: string, hours: number, status: Session['status'] = 'UPCOMING'): Session => ({
+      slotId: 1, date: '2026-08-31', startTime: '', endTime: '', timing: '', time, hours, status,
+    })
+    const out = upcomingSessions([
+      s('08:00 - 09:59', 2),  // morning — NOT cancelled
+      s('15:00 - 16:29', 1.5), // in the Onam window — cancelled
+      s('16:30 - 17:59', 1.5), // right after the window — NOT cancelled
+      s('14:00 - 15:29', 1.5), // overlaps the start — cancelled
+    ], noDates, ONAM)
+    expect(out.map(x => x.time)).toEqual(['08:00 - 09:59', '16:30 - 17:59'])
+  })
+
+  it('isSessionCancelled: whole-day date wins over windows; unknown times are kept', () => {
+    const wholeDay = new Set(['2026-08-31'])
+    const withTime: Session = { slotId: 1, date: '2026-08-31', startTime: '15:00', endTime: '16:29', timing: '', hours: 1.5, status: 'UPCOMING' }
+    const noTime: Session = { slotId: 1, date: '2026-08-31', startTime: '', endTime: '', timing: '', hours: 2, status: 'UPCOMING' }
+    expect(isSessionCancelled(withTime, noDates, ONAM)).toBe(true)
+    expect(isSessionCancelled(withTime, wholeDay, [])).toBe(true)  // whole-day
+    expect(isSessionCancelled(noTime, noDates, ONAM)).toBe(false)  // unknown time — not provable
+  })
+
+  it('computeSlotStats counts windowed sessions as not-remaining', () => {
+    // Both sessions are on 2026-08-31 → Circular 139 applies: a 2h span counts 1.5h.
+    const morning: Session = { slotId: 1, date: '2026-08-31', startTime: '08:00', endTime: '09:59', timing: '', hours: 2, status: 'UPCOMING' }
+    const afternoon: Session = { slotId: 1, date: '2026-08-31', startTime: '15:00', endTime: '16:29', timing: '', hours: 1.5, status: 'UPCOMING' }
+    const stats = computeSlotStats(slot([morning, afternoon]), noDates, ONAM)
+    expect(stats.remainingSessions).toBe(1)
+    expect(stats.remainingHours).toBe(1.5) // morning only, at 1.5h effective credit
+  })
+
+  it('a leave day with a windowed holiday only misses the non-cancelled sessions', () => {
+    const morning: Session = { slotId: 1, date: '2026-08-31', startTime: '08:00', endTime: '09:59', timing: '', hours: 2, status: 'UPCOMING' }
+    const afternoon: Session = { slotId: 1, date: '2026-08-31', startTime: '15:00', endTime: '16:29', timing: '', hours: 1.5, status: 'UPCOMING' }
+    const sd = slot([morning, afternoon])
+    const impact = computeLeaveImpact([sd], noDates, '2026-08-31', '2026-08-31', [], 0, ONAM)
+    // The afternoon class is cancelled anyway — only the morning class is a real
+    // miss (2h span, but 1.5h effective credit from Circular 139).
+    expect(impact.sessionsMissed).toBe(1)
+    expect(impact.hoursMissed).toBe(1.5)
   })
 })

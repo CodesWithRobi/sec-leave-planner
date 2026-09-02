@@ -1,4 +1,4 @@
-import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow, SubjectImpact, AttendanceData } from './types'
+import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, LeaveRange, ODEntry, VacationWindow, SubjectImpact, AttendanceData, HolidayWindow } from './types'
 
 // Zone thresholds
 const GREEN_THRESHOLD = 80
@@ -7,13 +7,43 @@ const AMBER_THRESHOLD = 75
 /** College-declared no-class days for Term 1 (single source of truth).
  *  Used by App/Dashboard for the holiday set and by ImportExport for the
  *  "Preloaded Holidays" list. Any portal rows on these dates are not
- *  counted as classes to attend. */
-export const DEFAULT_HOLIDAYS: { date: string; label: string }[] = [
+ *  counted as classes to attend.
+ *  Entries with start+end are PARTIAL-DAY holidays: only sessions whose
+ *  time range overlaps that window are cancelled (e.g. Onam's 3:00-4:30 PM
+ *  celebration). Others cancel the whole day. */
+export interface PreloadedHoliday { date: string; label: string; start?: string; end?: string }
+export const DEFAULT_HOLIDAYS: PreloadedHoliday[] = [
   { date: '2026-08-26', label: 'Aug 26 (Wed) — Milad-un-Nabi' },
-  { date: '2026-08-31', label: 'Aug 31 (Mon) — Onam Celebration (3:00–4:30 PM classes cancelled)' },
+  { date: '2026-08-31', label: 'Aug 31 (Mon) — Onam Celebration (3:00–4:30 PM)', start: '15:00', end: '16:30' },
   { date: '2026-09-04', label: 'Sep 4 (Fri) — Krishna Jayanthi' },
   { date: '2026-09-14', label: 'Sep 14 (Mon) — Vinayagar Chathurthi' },
 ]
+
+/** Split DEFAULT_HOLIDAYS into whole-day dates and partial-day windows. */
+export function preloadedHolidays(): { dates: Set<string>; windows: HolidayWindow[] } {
+  const dates = new Set<string>()
+  const windows: HolidayWindow[] = []
+  for (const d of DEFAULT_HOLIDAYS) {
+    if (d.start && d.end) windows.push({ date: d.date, start: d.start, end: d.end, label: d.label })
+    else dates.add(d.date)
+  }
+  return { dates, windows }
+}
+
+/** True when a session is cancelled: its date is a whole-day holiday, or its
+ *  time range overlaps a partial-day holiday window on that date. Sessions
+ *  with unknown times are never caught by windows (like time-restricted ODs). */
+export function isSessionCancelled(s: Session, holidays: Set<string>, windows: HolidayWindow[] = []): boolean {
+  const isoDate = parseSessionDate(s.date)
+  if (holidays.has(isoDate)) return true
+  if (windows.length === 0) return false
+  const range = sessionTimeRange(s)
+  if (!range) return false
+  const [start, end] = range
+  return windows.some(w =>
+    parseSessionDate(w.date) === isoDate && start < w.end && end > w.start
+  )
+}
 
 export function getZone(percentage: number): 'green' | 'amber' | 'red' {
   if (percentage >= GREEN_THRESHOLD) return 'green'
@@ -135,20 +165,19 @@ export function normalizeAttendanceData(data: AttendanceData): AttendanceData {
   return { ...data, slots }
 }
 
-/** Filter future sessions (UPCOMING) excluding given holiday dates */
-export function upcomingSessions(sessions: Session[], holidays: Set<string>): Session[] {
+/** Filter future sessions (UPCOMING) excluding cancelled dates/windows */
+export function upcomingSessions(sessions: Session[], holidays: Set<string>, windows: HolidayWindow[] = []): Session[] {
   return sessions.filter(s => {
     if (s.status !== 'UPCOMING') return false
-    const isoDate = parseSessionDate(s.date)
-    return !holidays.has(isoDate)
+    return !isSessionCancelled(s, holidays, windows)
   })
 }
 
 /** Compute stats for one slot */
-export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>): ComputedStats {
+export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>, windows: HolidayWindow[] = []): ComputedStats {
   const conducted = conductedSessions(slotDetail.sessions)
   const present = presentSessions(slotDetail.sessions)
-  const future = upcomingSessions(slotDetail.sessions, holidays)
+  const future = upcomingSessions(slotDetail.sessions, holidays, windows)
 
   const presentHours = present.reduce((sum, s) => sum + sessionHours(s), 0)
   const totalHours = conducted.reduce((sum, s) => sum + sessionHours(s), 0)
@@ -181,7 +210,8 @@ export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>):
 export function computeOverallStats(
   slotDetails: SlotDetail[],
   holidays: Set<string>,
-  excludeActivities: boolean = false
+  excludeActivities: boolean = false,
+  windows: HolidayWindow[] = []
 ): ComputedStats {
   const filtered = excludeActivities
     ? slotDetails.filter(sd => !sd.slot.isActivity)
@@ -197,7 +227,7 @@ export function computeOverallStats(
   for (const sd of filtered) {
     const conducted = conductedSessions(sd.sessions)
     const present = presentSessions(sd.sessions)
-    const future = upcomingSessions(sd.sessions, holidays)
+    const future = upcomingSessions(sd.sessions, holidays, windows)
 
     presentHours += present.reduce((sum, s) => sum + sessionHours(s), 0)
     totalHours += conducted.reduce((sum, s) => sum + sessionHours(s), 0)
@@ -328,6 +358,7 @@ export function computeLeavePlanImpact(
   ranges: LeaveRange[],
   overrides: DateOverride[] = [],
   rpLeaves: number = 0,
+  windows: HolidayWindow[] = [],
 ): LeaveImpact {
   // Apply overrides first
   const adjusted = slotDetails.map(sd => ({
@@ -347,8 +378,9 @@ export function computeLeavePlanImpact(
     for (const sd of adjusted) {
       for (const s of sd.sessions) {
         const isoDate = parseSessionDate(s.date)
-        // Only upcoming classes can be covered — a leave affects only future days
-        if (leaveDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
+        // Only upcoming classes can be covered — a leave affects only future days,
+        // and cancelled holiday sessions (whole-day or window) are not missable
+        if (leaveDates.has(isoDate) && !isSessionCancelled(s, holidays, windows) && s.status === 'UPCOMING') {
           dateHours.set(isoDate, (dateHours.get(isoDate) || 0) + sessionHours(s))
         }
       }
@@ -362,20 +394,20 @@ export function computeLeavePlanImpact(
   }
 
   // Compute before stats
-  const beforeOverall = computeOverallStats(adjusted, holidays)
+  const beforeOverall = computeOverallStats(adjusted, holidays, false, windows)
 
   const perSubject: Record<string, SubjectImpact> = {}
   let hoursMissed = 0
   let sessionsMissed = 0
 
   for (const sd of adjusted) {
-    const before = computeSlotStats(sd, holidays)
+    const before = computeSlotStats(sd, holidays, windows)
 
     // Only UPCOMING sessions in the plan are missed (RP-covered + holidays excluded)
     const missed = sd.sessions.filter(s => {
       const isoDate = parseSessionDate(s.date)
-      return leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) &&
-        s.status === 'UPCOMING'
+      return leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) &&
+        !isSessionCancelled(s, holidays, windows) && s.status === 'UPCOMING'
     })
 
     const missedHours = missed.reduce((sum, s) => sum + sessionHours(s), 0)
@@ -385,16 +417,17 @@ export function computeLeavePlanImpact(
     // After: leave-marked upcoming sessions become ABSENT; PRESENT/ABSENT untouched
     const adjustedSessions = sd.sessions.map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) &&
+        !isSessionCancelled(s, holidays, windows) && s.status === 'UPCOMING') {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
     })
 
-    const afterStats = computeSlotStats({ ...sd, sessions: adjustedSessions }, holidays)
+    const afterStats = computeSlotStats({ ...sd, sessions: adjustedSessions }, holidays, windows)
 
     // Projected per subject = attend every non-leave future session (mirrors overallFinal)
-    const remainingAfter = upcomingSessions(adjustedSessions, holidays)
+    const remainingAfter = upcomingSessions(adjustedSessions, holidays, windows)
       .reduce((sum, s) => sum + sessionHours(s), 0)
     const projectedDenominator = afterStats.totalHours + remainingAfter
     const projected = projectedDenominator > 0
@@ -418,19 +451,20 @@ export function computeLeavePlanImpact(
     ...sd,
     sessions: applyOverrides(sd.sessions, overrides).map(s => {
       const isoDate = parseSessionDate(s.date)
-      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) && !holidays.has(isoDate) && s.status === 'UPCOMING') {
+      if (leaveDates.has(isoDate) && !rpCoveredDates.has(isoDate) &&
+        !isSessionCancelled(s, holidays, windows) && s.status === 'UPCOMING') {
         return { ...s, status: 'ABSENT' as const }
       }
       return s
     }),
   }))
 
-  const afterOverall = computeOverallStats(adjustedOverall, holidays)
+  const afterOverall = computeOverallStats(adjustedOverall, holidays, false, windows)
 
   // Future hours still to be attended after the leave plan (holidays excluded already)
   let remainingAfter = 0
   for (const sd of adjustedOverall) {
-    remainingAfter += upcomingSessions(sd.sessions, holidays).reduce((sum, s) => sum + sessionHours(s), 0)
+    remainingAfter += upcomingSessions(sd.sessions, holidays, windows).reduce((sum, s) => sum + sessionHours(s), 0)
   }
 
   const denominator = afterOverall.totalHours + remainingAfter
@@ -464,8 +498,9 @@ export function computeLeaveImpact(
   endDate: string,
   overrides: DateOverride[] = [],
   rpLeaves: number = 0,
+  windows: HolidayWindow[] = [],
 ): LeaveImpact {
-  return computeLeavePlanImpact(slotDetails, holidays, [{ id: 'window', startDate, endDate }], overrides, rpLeaves)
+  return computeLeavePlanImpact(slotDetails, holidays, [{ id: 'window', startDate, endDate }], overrides, rpLeaves, windows)
 }
 
 /** Find ranked vacation windows, accounting for leave already in `plan`.
@@ -479,8 +514,9 @@ export function findVacationWindows(
   overrides: DateOverride[] = [],
   rpLeaves: number = 0,
   plan: LeaveRange[] = [],
+  windows: HolidayWindow[] = [],
 ): VacationWindow[] {
-  const windows: VacationWindow[] = []
+  const vacationWindows: VacationWindow[] = []
   const today = new Date()
   today.setHours(0, 0, 0, 0)
 
@@ -489,7 +525,7 @@ export function findVacationWindows(
   // vs. a subject already short for other reasons (which trips cannot fix).
   // The false flag means every extra session is attended, so projected is the
   // optimistic "do everything else" number.
-  const planBaseline = computeLeavePlanImpact(slotDetails, holidays, plan, overrides, rpLeaves)
+  const planBaseline = computeLeavePlanImpact(slotDetails, holidays, plan, overrides, rpLeaves, windows)
 
   // Only real courses must hold the 80% per-subject bar. Activities (ECA/SDCP)
   // add hours to the overall pool but carry no per-subject rule, so they never
@@ -517,7 +553,8 @@ export function findVacationWindows(
         startStr,
         endStr,
         overrides,
-        rpLeaves
+        rpLeaves,
+        windows
       )
 
       // Combined = existing plan + this window.
@@ -526,7 +563,8 @@ export function findVacationWindows(
         holidays,
         [...plan, { id: 'window', startDate: startStr, endDate: endStr }],
         overrides,
-        rpLeaves
+        rpLeaves,
+        windows
       )
       // Gate 1 (overall): combined projection at/above the 80% green target.
       if (combinedImpact.overallFinalZone !== 'green') break
@@ -556,7 +594,7 @@ export function findVacationWindows(
         overallAfter: combinedImpact.overallAfter,
       }
 
-      windows.push({
+      vacationWindows.push({
         ...impact,
         rank: 0,
         freeDaysBefore: freeBefore,
@@ -568,7 +606,7 @@ export function findVacationWindows(
 
   // Deduplicate: keep only the best window for each start date
   const bestByStart = new Map<string, VacationWindow>()
-  for (const w of windows) {
+  for (const w of vacationWindows) {
     const existing = bestByStart.get(w.startDate)
     if (!existing || w.totalCalendarDays > existing.totalCalendarDays) {
       bestByStart.set(w.startDate, w)

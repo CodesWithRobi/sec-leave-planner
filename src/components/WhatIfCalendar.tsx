@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import type { SlotDetail, DateOverride, LeaveRange } from '../engine/types'
+import type { SlotDetail, DateOverride, LeaveRange, HolidayWindow } from '../engine/types'
 import { computeLeavePlanImpact } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
@@ -10,13 +10,14 @@ interface Props {
   slots: SlotDetail[]
   overrides: DateOverride[]
   holidays: Set<string>
+  holidayWindows: HolidayWindow[]
   plan: LeaveRange[]
   onAddRange: (range: Omit<LeaveRange, 'id'>) => void
   onUpdateRange: (range: LeaveRange) => void
   onRemoveRange: (id: string) => void
 }
 
-export default function WhatIfCalendar({ slots, overrides, holidays, plan, onAddRange, onUpdateRange, onRemoveRange }: Props) {
+export default function WhatIfCalendar({ slots, overrides, holidays, holidayWindows, plan, onAddRange, onUpdateRange, onRemoveRange }: Props) {
   const [excludeActivities, setExcludeActivities] = useState<boolean>(false)
   const [rpLeaves, setRpLeaves] = useState<number>(0)
 
@@ -28,8 +29,8 @@ export default function WhatIfCalendar({ slots, overrides, holidays, plan, onAdd
   const impact = useMemo(() => {
     if (validRanges.length === 0) return null
     const slotsToUse = excludeActivities ? slots.filter(s => !s.slot.isActivity) : slots
-    return computeLeavePlanImpact(slotsToUse, holidays, validRanges, overrides, rpLeaves)
-  }, [slots, holidays, validRanges, overrides, excludeActivities, rpLeaves])
+    return computeLeavePlanImpact(slotsToUse, holidays, validRanges, overrides, rpLeaves, holidayWindows)
+  }, [slots, holidays, validRanges, overrides, excludeActivities, rpLeaves, holidayWindows])
 
   // Map subject code → name for display
   const subjectNames = useMemo(() => {

@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
-import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats, sessionHours, parseSessionDate, DEFAULT_HOLIDAYS } from '../engine/attendance'
+import type { SlotDetail, DateOverride, HolidayWindow } from '../engine/types'
+import { computeSlotStats, computeOverallStats, sessionHours, isSessionCancelled, preloadedHolidays } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -30,15 +30,17 @@ function ProgressBar({ percentage }: { percentage: number }) {
 
 export default function Dashboard({ slots, overrides }: Props) {
   const holidays = useMemo(() => {
-    const h = new Set(DEFAULT_HOLIDAYS.map(d => d.date))
+    const { dates, windows } = preloadedHolidays()
     overrides.forEach(o => {
-      if (o.type === 'holiday' || o.type === 'no_class') h.add(o.date)
-      if (o.type === 'class_happened') h.delete(o.date)
+      if (o.type === 'holiday' || o.type === 'no_class') dates.add(o.date)
+      if (o.type === 'class_happened') dates.delete(o.date)
     })
-    return h
+    return { dates, windows }
   }, [overrides])
+  const holidaySet = holidays.dates
+  const holidayWindows: HolidayWindow[] = holidays.windows
 
-  const overall = useMemo(() => computeOverallStats(slots, holidays), [slots, holidays])
+  const overall = useMemo(() => computeOverallStats(slots, holidaySet, false, holidayWindows), [slots, holidaySet, holidayWindows])
 
   // Overall safe misses: sessions you can miss before the 80% floor (count-based)
   const safeMisses = overall.budgetSessions
@@ -50,7 +52,7 @@ export default function Dashboard({ slots, overrides }: Props) {
     for (const sd of slots) {
       const present = sd.sessions.filter(s => s.status === 'PRESENT')
       const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
-      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
+      const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !isSessionCancelled(s, holidaySet, holidayWindows))
       const p = present.reduce((sum, s) => sum + sessionHours(s), 0)
       const c = conducted.reduce((sum, s) => sum + sessionHours(s), 0)
       const f = future.reduce((sum, s) => sum + sessionHours(s), 0)
@@ -73,17 +75,17 @@ export default function Dashboard({ slots, overrides }: Props) {
     const ifSkipSdcp = Math.round((allPresent + allRemaining - sdcpRemaining) / (allConducted + allRemaining) * 10000) / 100
 
     return { maxMissClasses, sdcpRemaining, ifAttendAll, ifSkipSdcp }
-  }, [slots, holidays])
+  }, [slots, holidaySet, holidayWindows])
 
   const subjectStats = useMemo(() =>
     slots
       .filter(s => !s.slot.isActivity)
       .map(s => ({
         ...s,
-        stats: computeSlotStats(s, holidays),
+        stats: computeSlotStats(s, holidaySet, holidayWindows),
       }))
       .sort((a, b) => a.stats.percentage - b.stats.percentage),
-    [slots, holidays]
+    [slots, holidaySet, holidayWindows]
   )
 
   // Activity hours detail
@@ -93,7 +95,7 @@ export default function Dashboard({ slots, overrides }: Props) {
       .map(sd => {
         const present = sd.sessions.filter(s => s.status === 'PRESENT')
         const conducted = sd.sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
-        const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !holidays.has(parseSessionDate(s.date)))
+        const future = sd.sessions.filter(s => s.status === 'UPCOMING' && !isSessionCancelled(s, holidaySet, holidayWindows))
         return {
           slot: sd.slot,
           attended: present.reduce((sum, s) => sum + sessionHours(s), 0),
@@ -102,7 +104,7 @@ export default function Dashboard({ slots, overrides }: Props) {
           remainingClasses: future.length,
         }
       }),
-    [slots, holidays]
+    [slots, holidaySet, holidayWindows]
   )
 
   return (

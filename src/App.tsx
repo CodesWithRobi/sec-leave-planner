@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useAttendanceStore } from './store/useAttendanceStore'
-import { applyODs, DEFAULT_HOLIDAYS } from './engine/attendance'
+import { applyODs, preloadedHolidays } from './engine/attendance'
 import Dashboard from './components/Dashboard'
 import WhatIfCalendar from './components/WhatIfCalendar'
 import TripPlanner from './components/TripPlanner'
@@ -13,10 +13,10 @@ export default function App() {
   const store = useAttendanceStore()
 
   const holidays = useMemo(() => {
-    const h = new Set(DEFAULT_HOLIDAYS.map(d => d.date))
+    const h = preloadedHolidays()
     store.overrides.forEach(o => {
-      if (o.type === 'holiday' || o.type === 'no_class') h.add(o.date)
-      if (o.type === 'class_happened') h.delete(o.date)
+      if (o.type === 'holiday' || o.type === 'no_class') h.dates.add(o.date)
+      if (o.type === 'class_happened') h.dates.delete(o.date)
     })
     return h
   }, [store.overrides])
@@ -80,7 +80,8 @@ export default function App() {
           <WhatIfCalendar
             slots={effectiveSlots}
             overrides={store.overrides}
-            holidays={holidays}
+            holidays={holidays.dates}
+            holidayWindows={holidays.windows}
             plan={store.leavePlan}
             onAddRange={store.addLeaveRange}
             onUpdateRange={store.updateLeaveRange}
@@ -91,7 +92,8 @@ export default function App() {
           <TripPlanner
             slots={effectiveSlots}
             overrides={store.overrides}
-            holidays={holidays}
+            holidays={holidays.dates}
+            holidayWindows={holidays.windows}
             plan={store.leavePlan}
             onAddRange={store.addLeaveRange}
             onRemoveRange={store.removeLeaveRange}
