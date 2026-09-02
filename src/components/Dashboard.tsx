@@ -99,6 +99,7 @@ export default function Dashboard({ slots, overrides }: Props) {
           attended: present.reduce((sum, s) => sum + sessionHours(s), 0),
           total: conducted.reduce((sum, s) => sum + sessionHours(s), 0),
           remaining: future.reduce((sum, s) => sum + sessionHours(s), 0),
+          remainingClasses: future.length,
         }
       }),
     [slots, holidays]
@@ -199,6 +200,9 @@ export default function Dashboard({ slots, overrides }: Props) {
                       <div className="text-[10px] text-gray-400">
                         {stats.presentSessions} classes ({stats.presentHours}h) / {stats.totalSessions} classes ({stats.totalHours}h)
                       </div>
+                      <div className="text-[10px] text-gray-400 mt-0.5">
+                        {stats.remainingSessions} classes ({stats.remainingHours}h) left
+                      </div>
                     </div>
                     <div className={`w-2 h-10 rounded-full ${ZONE_COLORS[stats.zone]}`} />
                   </div>
@@ -230,7 +234,7 @@ export default function Dashboard({ slots, overrides }: Props) {
                   <span className="text-gray-400 ml-2 text-xs">{i.slot.subjectName}</span>
                 </div>
                 <div className="text-xs text-gray-500">
-                  {i.attended}/{i.total}h · {i.remaining > 0 ? `${i.remaining}h left` : 'done'}
+                  {i.attended}/{i.total}h · {i.remaining > 0 ? `${i.remainingClasses} classes (${i.remaining}h) left` : 'done'}
                 </div>
               </div>
             ))}
