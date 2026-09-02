@@ -74,10 +74,6 @@ export function formatClasses(hours: number, avgHoursPerClass = 2): string {
   return `${displayClasses} classes (${hours}h)`
 }
 
-/** Circular 139 (learner.saveetha.in/academics/circulars/139/): from this
- *  date, every 2-hour class counts as 1.5h for attendance purposes. */
-export const CIRCULAR_DATE = '2026-08-31'
-
 const CALC_RE = /Counts\s+([\d.]+)/
 
 /** Parse "03" → 3, "04:30" → 4.5 */
@@ -119,14 +115,11 @@ function timingHoursOf(s: Session): number | null {
 
 /** Effective credit hours for one session.
  *  Priority: portal `calculation` text (exact per-session credit) → time span
- *  (minutes/60 rounded to 0.05) → timing heuristics → stored hours → default 2.
- *  Circular 139 halves a 2-hour class on/after CIRCULAR_DATE regardless of source. */
+ *  (minutes/60 rounded to 0.05) → timing heuristics → stored hours → default 2. */
 export function sessionHours(s: Session): number {
   const calc = s.calculation ? s.calculation.match(CALC_RE) : null
-  const h = calc ? parseFloat(calc[1])
+  return calc ? parseFloat(calc[1])
     : (spanHoursOf(s) ?? timingHoursOf(s) ?? (s.hours || 2))
-  if (h === 2 && parseSessionDate(s.date) >= CIRCULAR_DATE) return 1.5
-  return h
 }
 
 /** Filter sessions: exclude HOLIDAY and UPCOMING, keep PRESENT/ABSENT */

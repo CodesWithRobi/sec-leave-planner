@@ -74,8 +74,8 @@ describe('computeSlotStats', () => {
 
   it('Java: remaining sessions after removing holidays', () => {
     const stats = computeSlotStats(JAVA, HOLIDAYS)
-    // 11 upcoming: 3×2h (Aug 25/28/29) + 8×1.5h (Sep, circular 139) = 18h
-    expect(stats.remainingHours).toBe(18)
+    // 11 upcoming × 2h = 22h (all sessions are 2h)
+    expect(stats.remainingHours).toBe(22)
     expect(stats.remainingSessions).toBe(11)
   })
 
@@ -125,13 +125,13 @@ describe('computeOverallStats', () => {
     expect(stats.percentage).toBeCloseTo(82.98, 0)
   })
 
-  it('courses-only budget: shrinks with 1.5h classes (circular 139)', () => {
+  it('courses-only budget: all sessions are 2h, no circular discount', () => {
     const stats = computeOverallStats(ALL_SLOTS, HOLIDAYS, true)
-    // remaining = JAVA 18 + MA212 21 + HRM 16.5 + AOA 23 = 78.5h
-    // maxMiss = 126 + 78.5 - 0.8(150 + 78.5) = 21.7h
-    expect(stats.remainingHours).toBeCloseTo(78.5, 1)
-    expect(stats.budgetHours).toBeGreaterThan(20.5)
-    expect(stats.budgetHours).toBeLessThan(23)
+    // remaining = JAVA 22 + MA212 26 + HRM 20 + AOA 28 = 96h
+    // maxMiss = 126 + 96 - 0.8(150 + 96) = 25.2h
+    expect(stats.remainingHours).toBeCloseTo(96, 1)
+    expect(stats.budgetHours).toBeGreaterThan(24)
+    expect(stats.budgetHours).toBeLessThan(26.5)
   })
 })
 
@@ -189,8 +189,8 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
     const impact = computeLeavePlanImpact(ALL_SLOTS, HOLIDAYS, [])
     expect(impact.overallBefore).toBeCloseTo(82.98, 1)
     expect(impact.overallAfter).toBe(impact.overallBefore) // nothing missed
-    // 136.5 present + 88.5 upcoming (1.5h classes from Aug 31) = 225 of 253 = 88.93%
-    expect(impact.overallFinal).toBeCloseTo(88.93, 1)
+    // 136.5 present + 106h upcoming = 242.5 of 270.5 = 89.65%
+    expect(impact.overallFinal).toBeCloseTo(89.65, 1)
     expect(impact.overallFinalZone).toBe('green')
     expect(impact.sessionsMissed).toBe(0)
   })
@@ -198,9 +198,9 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
   it('1-day leave (Sep 3): projected main number, term-ended secondary', () => {
     const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-09-03', '2026-09-03')
     expect(impact.sessionsMissed).toBe(3)
-    expect(impact.hoursMissed).toBe(3.5) // AOA 1.5h (circular) + SDCP1 1h + SDCP2 1h
-    expect(impact.overallAfter).toBeCloseTo(81.25, 1) // 136.5/168
-    expect(impact.overallFinal).toBeCloseTo(87.55, 1) // (136.5 + 85)/253
+    expect(impact.hoursMissed).toBe(4) // AOA 2h + SDCP1 1h + SDCP2 1h
+    expect(impact.overallAfter).toBeCloseTo(81.01, 1) // 136.5/168.5
+    expect(impact.overallFinal).toBeCloseTo(88.17, 1) // (136.5 + 102)/270.5
     expect(impact.overallFinal).toBeGreaterThan(impact.overallAfter)
     expect(impact.overallFinalZone).toBe('green')
   })
@@ -208,13 +208,13 @@ describe('computeLeavePlanImpact (projected + stacked ranges)', () => {
   it('projected final = formula: (present + remaining - missed)/(conducted + remaining)', () => {
     const impact = computeLeaveImpact(ALL_SLOTS, HOLIDAYS, '2026-08-31', '2026-09-12')
     // Cross-check against the closed form computed from the reported numbers:
-    // after = (P)/(C+L), final = (P + R - L)/(C + R), so final = after ratio + remaining scaling.
-    // Missed 28 sessions = 24×1.5h (circular 139) + 4×1h (SDCP) = 40h.
-    // Exact engine values: after 136.5/204.5 = 66.75, final 185/253 = 73.12
+    // after = P/(C+L), final = (P + R - L)/(C + R), so final = after ratio + remaining scaling.
+    // Missed 28 sessions = 24×2h + 4×1h (SDCP) = 52h.
+    // Exact engine values: after 136.5/216.5 = 63.05, final 190.5/270.5 = 70.43
     expect(impact.sessionsMissed).toBe(28)
-    expect(impact.hoursMissed).toBe(40)
-    expect(impact.overallAfter).toBeCloseTo(66.75, 1)
-    expect(impact.overallFinal).toBeCloseTo(73.12, 1)
+    expect(impact.hoursMissed).toBe(52)
+    expect(impact.overallAfter).toBeCloseTo(63.05, 1)
+    expect(impact.overallFinal).toBeCloseTo(70.43, 1)
     expect(impact.overallFinalZone).toBe('red')
   })
 
@@ -358,33 +358,29 @@ describe('formatClasses', () => {
   })
 })
 
-describe('sessionHours (circular 139: every 2h class from 2026-08-31 = 1.5h)', () => {
+describe('sessionHours — each class counts at face value (no circular discount)', () => {
   const s = (date: string, hours: number, timing = ''): Session => ({
     slotId: 1, date, startTime: '', endTime: '', timing, hours, status: 'UPCOMING',
   })
 
-  it('2h class before the date stays 2h', () => {
+  it('2h class always counts as 2h regardless of date', () => {
     expect(sessionHours(s('2026-08-28', 2))).toBe(2)
-  })
-  it('2h class on the date becomes 1.5h (boundary: Aug 31 included)', () => {
-    expect(sessionHours(s('2026-08-31', 2))).toBe(1.5)
-  })
-  it('2h class after the date becomes 1.5h', () => {
-    expect(sessionHours(s('2026-09-01', 2))).toBe(1.5)
+    expect(sessionHours(s('2026-08-31', 2))).toBe(2)
+    expect(sessionHours(s('2026-09-01', 2))).toBe(2)
   })
   it('1h (SDCP) and 1.5h (mentor) classes are unchanged', () => {
     expect(sessionHours(s('2026-09-03', 1))).toBe(1)
     expect(sessionHours(s('2026-09-03', 1.5))).toBe(1.5)
   })
   it('CLS span in timing wins; human dates parse', () => {
-    expect(sessionHours(s('17 Sep 2026', 2, 'CLS10-12'))).toBe(1.5)
+    expect(sessionHours(s('17 Sep 2026', 2, 'CLS10-12'))).toBe(2)
     expect(sessionHours(s('28 Aug 2026', 2, 'CLS10-12'))).toBe(2)
     expect(sessionHours(s('01 Sep 2026', 1, 'CLS10-11'))).toBe(1) // 1h CLS untouched
   })
-  it('audit: projected pools reflect the rule', () => {
+  it('audit: projected pools reflect 2h per class', () => {
     const overall = computeOverallStats(ALL_SLOTS, HOLIDAYS, false)
-    // remaining = JAVA 18 + MA212 21 + HRM 16.5 + AOA 23 + SDCP 5 + SDCP 5 = 88.5h
-    expect(overall.remainingHours).toBeCloseTo(88.5, 1)
+    // remaining = JAVA 22 + MA212 26 + HRM 20 + AOA 28 + SDCP 5 + SDCP 5 = 106h
+    expect(overall.remainingHours).toBeCloseTo(106, 1)
     expect(overall.remainingSessions).toBe(58)
     expect(overall.presentSessions).toBe(71)
     expect(overall.totalSessions).toBe(86)
@@ -409,8 +405,9 @@ describe('sessionHours — real portal formats (live-audit regression)', () => {
   it('time-span minutes derive hours (89 min → 1.5, 120 → 2, 60 → 1)', () => {
     expect(sessionHours(s({ time: '15:00 - 16:29' }))).toBe(1.5)
     expect(sessionHours(s({ time: '08:00 - 09:29' }))).toBe(1.5)
-    // 10:00-11:59 = 119 min → 2h; pre-circular date keeps it 2h
+    // 10:00-11:59 = 119 min → 2h (no circular discount)
     expect(sessionHours(s({ time: '10:00 - 11:59', date: '2026-08-28' }))).toBe(2)
+    expect(sessionHours(s({ time: '10:00 - 11:59', date: '2026-09-01' }))).toBe(2)
     expect(sessionHours(s({ time: '08:00 - 09:00' }))).toBe(1)
   })
 
@@ -443,12 +440,12 @@ describe('sessionHours — real portal formats (live-audit regression)', () => {
     expect(sessionHours(s({ timing: 'CLS03-04:30', time: '15:00 - 16:29', hours: 1 }))).toBe(1.5)
   })
 
-  it('circular still halves span-derived 2h on/after Aug 31', () => {
+  it('no circular discount: span-derived 2h stays 2h on/after Aug 31', () => {
     expect(sessionHours(s({ time: '08:00 - 10:00', date: '2026-08-28' }))).toBe(2)
-    expect(sessionHours(s({ time: '08:00 - 10:00', date: '2026-08-31' }))).toBe(1.5)
+    expect(sessionHours(s({ time: '08:00 - 10:00', date: '2026-08-31' }))).toBe(2)
   })
 
-  it('leave arithmetic uses 1.5h for HH:MM-timing upcoming sessions', () => {
+  it('leave arithmetic uses 2h for HH:MM-timing upcoming sessions', () => {
     const slot: SlotDetail = {
       slot: { id: 9, slotName: 'X', subjectCode: '19AI404', subjectName: 'AoA', isActivity: false },
       sessions: [
@@ -459,7 +456,7 @@ describe('sessionHours — real portal formats (live-audit regression)', () => {
     }
     const impact = computeLeaveImpact([slot], new Set(), '2026-09-03', '2026-09-03')
     expect(impact.sessionsMissed).toBe(1)
-    expect(impact.hoursMissed).toBe(1.5)
+    expect(impact.hoursMissed).toBe(1.5) // span 15:00-16:29 = 89min = 1.5h
   })
 })
 
@@ -648,12 +645,12 @@ describe('partial-day holiday windows (Onam: 15:00-16:30 only)', () => {
   })
 
   it('computeSlotStats counts windowed sessions as not-remaining', () => {
-    // Both sessions are on 2026-08-31 → Circular 139 applies: a 2h span counts 1.5h.
+    // Morning 08:00-09:59 = 2h span; afternoon cancelled by Onam window.
     const morning: Session = { slotId: 1, date: '2026-08-31', startTime: '08:00', endTime: '09:59', timing: '', hours: 2, status: 'UPCOMING' }
     const afternoon: Session = { slotId: 1, date: '2026-08-31', startTime: '15:00', endTime: '16:29', timing: '', hours: 1.5, status: 'UPCOMING' }
     const stats = computeSlotStats(slot([morning, afternoon]), noDates, ONAM)
     expect(stats.remainingSessions).toBe(1)
-    expect(stats.remainingHours).toBe(1.5) // morning only, at 1.5h effective credit
+    expect(stats.remainingHours).toBe(2) // morning only, 2h span
   })
 
   it('a leave day with a windowed holiday only misses the non-cancelled sessions', () => {
@@ -661,9 +658,8 @@ describe('partial-day holiday windows (Onam: 15:00-16:30 only)', () => {
     const afternoon: Session = { slotId: 1, date: '2026-08-31', startTime: '15:00', endTime: '16:29', timing: '', hours: 1.5, status: 'UPCOMING' }
     const sd = slot([morning, afternoon])
     const impact = computeLeaveImpact([sd], noDates, '2026-08-31', '2026-08-31', [], 0, ONAM)
-    // The afternoon class is cancelled anyway — only the morning class is a real
-    // miss (2h span, but 1.5h effective credit from Circular 139).
+    // The afternoon class is cancelled anyway — only the morning class is a real miss (2h span).
     expect(impact.sessionsMissed).toBe(1)
-    expect(impact.hoursMissed).toBe(1.5)
+    expect(impact.hoursMissed).toBe(2)
   })
 })
