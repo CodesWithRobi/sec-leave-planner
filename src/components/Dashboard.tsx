@@ -213,8 +213,8 @@ export default function Dashboard({ slots, overrides }: Props) {
                   <ProgressBar percentage={stats.percentage} />
                   <div className={`text-xs mt-1.5 ${isDanger ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                     {isDanger
-                      ? `At risk — only ${sMisses} classes left to miss`
-                      : `${sMisses} classes left to miss`}
+                      ? `At risk — only ${sMisses} classes (${stats.budgetHours}h) left to miss`
+                      : `${sMisses} classes (${stats.budgetHours}h) left to miss`}
                   </div>
                 </div>
               </div>
