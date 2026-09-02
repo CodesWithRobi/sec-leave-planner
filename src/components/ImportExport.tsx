@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState } from 'react'
 import { BOOKMARKLET_URL } from '../bookmarklet'
+import { DEFAULT_HOLIDAYS } from '../engine/attendance'
 import type { AttendanceData, DateOverride, ODEntry } from '../engine/types'
 
 interface Props {
@@ -381,9 +382,7 @@ export default function ImportExport({ onImport, onClear, hasData, overrides, on
       <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
         <h2 className="text-sm font-medium text-gray-500 mb-3">Preloaded Holidays (Term 1)</h2>
         <div className="text-sm space-y-1">
-          <div>Aug 26 (Wed) — Milad-un-Nabi</div>
-          <div>Sep 4 (Fri) — Krishna Jayanthi</div>
-          <div>Sep 14 (Mon) — Vinayagar Chathurthi</div>
+          {DEFAULT_HOLIDAYS.map(d => <div key={d.date}>{d.label}</div>)}
         </div>
       </div>
 

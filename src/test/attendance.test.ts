@@ -13,6 +13,7 @@ import {
   sessionHours,
   mapSessionStatus,
   normalizeAttendanceData,
+  DEFAULT_HOLIDAYS,
 } from '../engine/attendance'
 import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
 import type { Session, SlotDetail, ODEntry } from '../engine/types'
@@ -22,6 +23,20 @@ const od = (partial: Partial<ODEntry>): ODEntry => ({
   startDate: '2026-01-01',
   endDate: '2026-12-31',
   ...partial,
+})
+
+describe('DEFAULT_HOLIDAYS', () => {
+  it('includes the Onam celebration (2026-08-31, classes 3:00-4:30 PM cancelled)', () => {
+    const onam = DEFAULT_HOLIDAYS.find(d => d.date === '2026-08-31')
+    expect(onam).toBeDefined()
+    expect(onam!.label).toMatch(/Onam/)
+  })
+
+  it('has unique dates and a label per entry', () => {
+    const dates = DEFAULT_HOLIDAYS.map(d => d.date)
+    expect(new Set(dates).size).toBe(dates.length)
+    DEFAULT_HOLIDAYS.forEach(d => expect(d.label.length).toBeGreaterThan(0))
+  })
 })
 
 describe('getZone', () => {

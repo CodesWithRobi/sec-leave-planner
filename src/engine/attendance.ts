@@ -4,6 +4,17 @@ import type { Session, SlotDetail, ComputedStats, DateOverride, LeaveImpact, Lea
 const GREEN_THRESHOLD = 80
 const AMBER_THRESHOLD = 75
 
+/** College-declared no-class days for Term 1 (single source of truth).
+ *  Used by App/Dashboard for the holiday set and by ImportExport for the
+ *  "Preloaded Holidays" list. Any portal rows on these dates are not
+ *  counted as classes to attend. */
+export const DEFAULT_HOLIDAYS: { date: string; label: string }[] = [
+  { date: '2026-08-26', label: 'Aug 26 (Wed) — Milad-un-Nabi' },
+  { date: '2026-08-31', label: 'Aug 31 (Mon) — Onam Celebration (3:00–4:30 PM classes cancelled)' },
+  { date: '2026-09-04', label: 'Sep 4 (Fri) — Krishna Jayanthi' },
+  { date: '2026-09-14', label: 'Sep 14 (Mon) — Vinayagar Chathurthi' },
+]
+
 export function getZone(percentage: number): 'green' | 'amber' | 'red' {
   if (percentage >= GREEN_THRESHOLD) return 'green'
   if (percentage >= AMBER_THRESHOLD) return 'amber'

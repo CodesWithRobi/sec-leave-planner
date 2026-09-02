@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useAttendanceStore } from './store/useAttendanceStore'
-import { applyODs } from './engine/attendance'
+import { applyODs, DEFAULT_HOLIDAYS } from './engine/attendance'
 import Dashboard from './components/Dashboard'
 import WhatIfCalendar from './components/WhatIfCalendar'
 import TripPlanner from './components/TripPlanner'
@@ -13,7 +13,7 @@ export default function App() {
   const store = useAttendanceStore()
 
   const holidays = useMemo(() => {
-    const h = new Set(['2026-08-26', '2026-09-04', '2026-09-14'])
+    const h = new Set(DEFAULT_HOLIDAYS.map(d => d.date))
     store.overrides.forEach(o => {
       if (o.type === 'holiday' || o.type === 'no_class') h.add(o.date)
       if (o.type === 'class_happened') h.delete(o.date)

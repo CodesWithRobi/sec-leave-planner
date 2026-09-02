@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride } from '../engine/types'
-import { computeSlotStats, computeOverallStats, sessionHours, parseSessionDate } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, sessionHours, parseSessionDate, DEFAULT_HOLIDAYS } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -30,7 +30,7 @@ function ProgressBar({ percentage }: { percentage: number }) {
 
 export default function Dashboard({ slots, overrides }: Props) {
   const holidays = useMemo(() => {
-    const h = new Set(['2026-08-26', '2026-09-04', '2026-09-14'])
+    const h = new Set(DEFAULT_HOLIDAYS.map(d => d.date))
     overrides.forEach(o => {
       if (o.type === 'holiday' || o.type === 'no_class') h.add(o.date)
       if (o.type === 'class_happened') h.delete(o.date)
