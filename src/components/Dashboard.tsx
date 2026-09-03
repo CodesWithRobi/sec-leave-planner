@@ -64,9 +64,12 @@ export default function Dashboard({ slots, overrides }: Props) {
 
     if (sdcpRemaining === 0) return null
 
-    // Max SDCP hours can miss before overall hits 80%
+    // Max hours can miss before overall hits 80%, converted to class count
     const maxMissHours = allPresent + allRemaining - 0.8 * (allConducted + allRemaining)
-    const maxMissClasses = Math.max(0, Math.floor(maxMissHours))
+    const remainingCount = slots.reduce((n, sd) =>
+      n + sd.sessions.filter(s => s.status === 'UPCOMING' && !isSessionCancelled(s, holidaySet, holidayWindows)).length, 0)
+    const avgHours = remainingCount > 0 ? allRemaining / remainingCount : 2
+    const maxMissClasses = Math.max(0, Math.floor(Math.max(0, maxMissHours) / avgHours))
 
     // Overall if attend ALL remaining
     const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
