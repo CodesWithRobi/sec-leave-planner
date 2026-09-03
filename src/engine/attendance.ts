@@ -120,12 +120,15 @@ function timingHoursOf(s: Session): number | null {
 }
 
 /** Effective credit hours for one session.
- *  Priority: portal `calculation` text (exact per-session credit) → time span
- *  (minutes/60 rounded to 0.05) → timing heuristics → stored hours → default 2. */
+ *  Priority: portal `calculation` text (exact per-session credit) → stored credit
+ *  hours (2 for courses, 1.5 mentor, 1 SDCP) → time-span / timing heuristics → 2.
+ *  The stored `hours` field is the source of truth: a course held 09:45-11:15 still
+ *  counts as a full 2.0 credit class, not the 1.5 the clock span suggests. */
 export function sessionHours(s: Session): number {
   const calc = s.calculation ? s.calculation.match(CALC_RE) : null
-  return calc ? parseFloat(calc[1])
-    : (spanHoursOf(s) ?? timingHoursOf(s) ?? (s.hours || 2))
+  if (calc) return parseFloat(calc[1])
+  if (typeof s.hours === 'number' && s.hours > 0) return s.hours
+  return (spanHoursOf(s) ?? timingHoursOf(s) ?? 2)
 }
 
 /** Filter sessions: exclude HOLIDAY and UPCOMING, keep PRESENT/ABSENT */

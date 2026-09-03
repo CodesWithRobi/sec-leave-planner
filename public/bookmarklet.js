@@ -24,19 +24,7 @@
   var TERM = 8;
   var BASE = '/academics/calculate-my-attendance';
 
-  var CIRCULAR = '2026-08-31';
-
   // --- Parse helpers (all ES5) ---
-
-  var MONTHS = { 'Jan':'01','Feb':'02','Mar':'03','Apr':'04','May':'05','Jun':'06',
-    'Jul':'07','Aug':'08','Sep':'09','Oct':'10','Nov':'11','Dec':'12' };
-
-  /** "17 Jul 2026" → "2026-07-17" */
-  function isoDate(d) {
-    var m = /(\d+)\s+(\w+)\s+(\d{4})/.exec(d || '');
-    if (m) return m[3] + '-' + (MONTHS[m[2]] || '01') + '-' + ('0' + m[1]).slice(-2);
-    return d || '';
-  }
 
   /** "Counts 1.50 as Present" → 1.5  |  "Not counted: Upcoming" → null */
   function parseCalc(s) {
@@ -76,12 +64,18 @@
 
   /** Hour credit for a session row.
    *  Priority: portal calculation text (exact) → time-span minutes → timing
-   *  heuristics → default 2. Circular 139 halves a 2h class on/after Aug 31. */
-  function hoursFor(row) {
+   *  heuristics → default 2. Circular 139 was reversed: every class counts at
+   *  its face value regardless of date. For UPCOMING non-activity sessions the
+   *  portal gives "Not counted: Upcoming" with no credit, but the college counts
+   *  every course session as a full 2h — so override any span/timing heuristic. */
+  function hoursFor(row, isActivity) {
     var calc = parseCalc(row.calculation);
-    var h = (calc !== null) ? calc : spanHours(row.time);
+    if (calc !== null) return calc;
+    // UPCOMING non-activity (course) sessions: always 2h credit.
+    if (!isActivity) return 2;
+    // Activities keep their own span / timing hours.
+    var h = spanHours(row.time);
     if (h === null) h = hoursOf(row.timing);
-    if (h === 2 && isoDate(row.date) >= CIRCULAR) return 1.5;
     return h;
   }
 
@@ -158,20 +152,21 @@
               return x.status === 'PRESENT' || x.status === 'ABSENT' || x.status === 'GatePass';
             });
             var code = slot.subject_code || '';
+            var isActivity = code.indexOf('ECA') === 0 || code.indexOf('SDCP') === 0;
             return {
               slot: {
                 id: slot.id,
                 slotName: slot.slot_name,
                 subjectCode: code,
                 subjectName: slot.subject_name,
-                isActivity: code.indexOf('ECA') === 0 || code.indexOf('SDCP') === 0
+                isActivity: isActivity
               },
               sessions: sessions.map(function (x) {
-                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursFor(x) };
+                return { date: x.date, time: x.time, timing: x.timing, location: x.location, status: x.status, calculation: x.calculation, hours: hoursFor(x, isActivity) };
               }),
               stats: {
-                presentHours: present.reduce(function (a, x) { return a + hoursFor(x); }, 0),
-                totalHours: conducted.reduce(function (a, x) { return a + hoursFor(x); }, 0),
+                presentHours: present.reduce(function (a, x) { return a + hoursFor(x, isActivity); }, 0),
+                totalHours: conducted.reduce(function (a, x) { return a + hoursFor(x, isActivity); }, 0),
                 percentage: 0
               }
             };

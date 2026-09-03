@@ -457,9 +457,11 @@ describe('sessionHours — real portal formats (live-audit regression)', () => {
     expect(sessionHours(s({ timing: 'SWH01', calculation: 'Not counted: Upcoming' }))).toBe(1)
   })
 
-  it('old exports normalize without re-import (stored 1h + real span → 1.5h)', () => {
-    // Pre-fix bookmarklet exported CLS03-04:30 sessions with hours:1.
-    expect(sessionHours(s({ timing: 'CLS03-04:30', time: '15:00 - 16:29', hours: 1 }))).toBe(1.5)
+  it('stored hours is the source of truth — overrides span/timing heuristics', () => {
+    // A course with CLS03-04:30 timing but stored hours:2 counts as 2h, not 1.5h.
+    expect(sessionHours(s({ timing: 'CLS03-04:30', time: '15:00 - 16:29', hours: 2 }))).toBe(2)
+    // Old bookmarklet exports with wrong hours:1 need re-import to fix.
+    expect(sessionHours(s({ timing: 'CLS03-04:30', time: '15:00 - 16:29', hours: 1 }))).toBe(1)
   })
 
   it('no circular discount: span-derived 2h stays 2h on/after Aug 31', () => {
