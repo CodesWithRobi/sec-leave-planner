@@ -18,7 +18,7 @@ import {
   preloadedHolidays,
   isSessionCancelled,
 } from '../engine/attendance'
-import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS } from './fixtures'
+import { JAVA, MA212, HRM, AOA, SDCP1, HOLIDAYS, ALL_SLOTS, makeSession } from './fixtures'
 import type { Session, SlotDetail, ODEntry, HolidayWindow } from '../engine/types'
 
 const od = (partial: Partial<ODEntry>): ODEntry => ({
@@ -107,6 +107,31 @@ describe('computeSlotStats', () => {
     expect(stats.percentage).toBeCloseTo(66.67, 1)
     expect(stats.zone).toBe('red')
   })
+
+  it('budget reports whole classes only, not fractional hours', () => {
+    // 2h classes: 11 present, 1 absent, 2 upcoming.
+    // Continuous budget = 22 + 4 - 0.8(24 + 4) = 3.6h.
+    // That covers only ONE whole 2h class, so must show 1 class (2h),
+    // never "2 classes (3.6h)".
+    const sessions: Session[] = [
+      ...Array.from({ length: 11 }, (_, i) =>
+        makeSession(1, `2026-08-${String(1 + i * 3).padStart(2, '0')}`, '10:00 - 11:59', 'PRESENT', 2)),
+      makeSession(1, '2026-09-01', '10:00 - 11:59', 'ABSENT', 2),
+      makeSession(1, '2026-09-05', '10:00 - 11:59', 'UPCOMING', 2),
+      makeSession(1, '2026-09-08', '10:00 - 11:59', 'UPCOMING', 2),
+    ]
+    const sd: SlotDetail = {
+      slot: { id: 1, slotName: 'S', subjectCode: 'SUB', subjectName: 'Sub', isActivity: false },
+      sessions,
+      stats: { presentHours: 0, totalHours: 0, percentage: 0 },
+    }
+    const stats = computeSlotStats(sd, new Set())
+    // Continuous budget 3.6h -> only 1 whole 2h class skippable
+    expect(stats.budgetSessions).toBe(1)
+    // Hours derive from the whole-class count, so the pair always reconciles
+    expect(stats.budgetHours).toBe(2)
+    expect(stats.budgetHours).toBeCloseTo(stats.budgetSessions * 2, 1)
+  })
 })
 
 describe('computeOverallStats', () => {
@@ -125,13 +150,16 @@ describe('computeOverallStats', () => {
     expect(stats.percentage).toBeCloseTo(82.98, 0)
   })
 
-  it('courses-only budget: all sessions are 2h, no circular discount', () => {
+  it('courses-only budget: whole classes only, no circular discount', () => {
     const stats = computeOverallStats(ALL_SLOTS, HOLIDAYS, true)
-    // remaining = JAVA 22 + MA212 26 + HRM 20 + AOA 28 = 96h
-    // maxMiss = 126 + 96 - 0.8(150 + 96) = 25.2h
+    // remaining = JAVA 22 + MA212 26 + HRM 20 + AOA 28 = 96h across 48 sessions (2h each)
+    // maxMiss = 126 + 96 - 0.8(150 + 96) = 25.2h continuous
+    // Whole 2h classes you can miss: floor(25.2 / 2) = 12 classes
+    // budgetHours derives from the count so "12 classes (24h)" reconciles.
     expect(stats.remainingHours).toBeCloseTo(96, 1)
-    expect(stats.budgetHours).toBeGreaterThan(24)
-    expect(stats.budgetHours).toBeLessThan(26.5)
+    expect(stats.budgetSessions).toBe(12)
+    expect(stats.budgetHours).toBe(24)
+    expect(stats.budgetHours).toBeCloseTo(stats.budgetSessions * 2, 1)
   })
 })
 

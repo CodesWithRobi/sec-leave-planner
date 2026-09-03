@@ -178,12 +178,13 @@ export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>, 
 
   const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
 
-  // Budget: max hours may miss at >=80%
+  // Budget: whole future sessions you could miss and still finish at >=80%.
+  // Derive the hour figure from the session count (not the reverse) so the
+  // two always reconcile: "N classes (Xh)" means N whole classes worth Xh.
   const maxMiss = presentHours + remainingHours - 0.8 * (totalHours + remainingHours)
-  const budgetHours = Math.max(0, maxMiss)
-  // Count actual remaining sessions, not just hours/2
   const avgSessionHours = future.length > 0 ? remainingHours / future.length : 2
-  const budgetSessions = Math.floor(budgetHours / avgSessionHours)
+  const budgetSessions = avgSessionHours > 0 ? Math.max(0, Math.floor(maxMiss / avgSessionHours)) : 0
+  const budgetHours = budgetSessions * avgSessionHours
 
   return {
     presentSessions: present.length,
@@ -232,8 +233,9 @@ export function computeOverallStats(
 
   const percentage = totalHours > 0 ? (presentHours / totalHours) * 100 : 100
   const maxMiss = presentHours + remainingHours - 0.8 * (totalHours + remainingHours)
-  const budgetHours = Math.max(0, maxMiss)
   const avgSessionHours = remainingCount > 0 ? remainingHours / remainingCount : 2
+  const budgetSessions = avgSessionHours > 0 ? Math.max(0, Math.floor(maxMiss / avgSessionHours)) : 0
+  const budgetHours = budgetSessions * avgSessionHours
 
   return {
     presentSessions: presentCount,
@@ -244,7 +246,7 @@ export function computeOverallStats(
     remainingHours,
     remainingSessions: remainingCount,
     budgetHours: Math.round(budgetHours * 100) / 100,
-    budgetSessions: Math.floor(budgetHours / avgSessionHours),
+    budgetSessions,
     zone: getZone(percentage),
   }
 }
