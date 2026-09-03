@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import type { SlotDetail, DateOverride, LeaveRange, HolidayWindow } from '../engine/types'
-import { computeLeavePlanImpact } from '../engine/attendance'
+import { computeLeavePlanImpact, formatCount } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
 const TERM_MIN = '2026-08-25'
@@ -229,7 +229,7 @@ export default function WhatIfCalendar({ slots, overrides, holidays, holidayWind
                     <div className="mt-1 text-xs text-gray-500 ml-2">
                       Missed: {data.missedClasses} classes ({data.missedHours}h)
                       {!isActivity && (
-                        <> · Remaining budget: {data.remainingBudgetSessions} classes ({data.remainingBudget}h)</>
+                        <> · Remaining budget: {formatCount(data.remainingBudgetSessions)} classes ({data.remainingBudget}h)</>
                       )}
                       {!isActivity && (
                         unrecoverable ? (

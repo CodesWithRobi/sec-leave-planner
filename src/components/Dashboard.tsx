@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import type { SlotDetail, DateOverride, HolidayWindow } from '../engine/types'
-import { computeSlotStats, computeOverallStats, sessionHours, isSessionCancelled, preloadedHolidays } from '../engine/attendance'
+import { computeSlotStats, computeOverallStats, sessionHours, isSessionCancelled, preloadedHolidays, formatCount } from '../engine/attendance'
 
 interface Props {
   slots: SlotDetail[]
@@ -42,8 +42,9 @@ export default function Dashboard({ slots, overrides }: Props) {
 
   const overall = useMemo(() => computeOverallStats(slots, holidaySet, false, holidayWindows), [slots, holidaySet, holidayWindows])
 
-  // Overall safe misses: sessions you can miss before the 80% floor (count-based)
+  // Overall safe misses: fractional hours you can miss before the 80% floor
   const safeMisses = overall.budgetSessions
+  const safeMissesLabel = formatCount(safeMisses)
 
   // SDCP scenario analysis
   const sdcpScenario = useMemo(() => {
@@ -64,12 +65,12 @@ export default function Dashboard({ slots, overrides }: Props) {
 
     if (sdcpRemaining === 0) return null
 
-    // Max hours can miss before overall hits 80%, converted to class count
+    // Max hours can miss before overall hits 80%, converted to fractional class count
     const maxMissHours = allPresent + allRemaining - 0.8 * (allConducted + allRemaining)
     const remainingCount = slots.reduce((n, sd) =>
       n + sd.sessions.filter(s => s.status === 'UPCOMING' && !isSessionCancelled(s, holidaySet, holidayWindows)).length, 0)
     const avgHours = remainingCount > 0 ? allRemaining / remainingCount : 2
-    const maxMissClasses = Math.max(0, Math.floor(Math.max(0, maxMissHours) / avgHours))
+    const maxMissClasses = Math.max(0, Math.round(Math.max(0, maxMissHours) / avgHours * 10) / 10)
 
     // Overall if attend ALL remaining
     const ifAttendAll = Math.round((allPresent + allRemaining) / (allConducted + allRemaining) * 10000) / 100
@@ -142,13 +143,13 @@ export default function Dashboard({ slots, overrides }: Props) {
           <div className={`rounded-xl p-3 text-center ${overall.budgetHours > 0 ? 'bg-green-50' : 'bg-red-50'}`}>
             <div className="text-xs text-gray-500 mb-1">Can still miss</div>
             <div className={`font-bold text-sm ${overall.budgetHours > 0 ? 'text-green-700' : 'text-red-700'}`}>
-              {safeMisses} classes
+              {safeMissesLabel} classes
             </div>
           </div>
         </div>
 
         <div className="mt-3 text-xs text-gray-400 text-center">
-          You can miss {safeMisses} more classes and still stay at 80%
+          You can miss {safeMissesLabel} classes ({overall.budgetHours}h) and still stay at 80%
         </div>
       </div>
 
@@ -159,7 +160,7 @@ export default function Dashboard({ slots, overrides }: Props) {
 
           <div className="flex items-end gap-3">
             <span className={`text-4xl font-bold ${sdcpScenario.maxMissClasses <= 2 ? 'text-red-600' : sdcpScenario.maxMissClasses <= 4 ? 'text-amber-600' : 'text-green-600'}`}>
-              {sdcpScenario.maxMissClasses}
+              {formatCount(sdcpScenario.maxMissClasses)}
             </span>
             <span className="text-sm text-gray-400 mb-1">classes you can skip</span>
           </div>
@@ -188,6 +189,7 @@ export default function Dashboard({ slots, overrides }: Props) {
         <div className="grid gap-2.5">
           {subjectStats.map(({ slot: s, stats }) => {
             const sMisses = Math.max(0, stats.budgetSessions)
+            const sMissesLabel = formatCount(sMisses)
             const isDanger = stats.percentage < 80
             return (
               <div key={s.id} className={`bg-white rounded-xl p-4 shadow-sm border ${isDanger ? 'border-red-200' : 'border-gray-100'}`}>
@@ -216,8 +218,8 @@ export default function Dashboard({ slots, overrides }: Props) {
                   <ProgressBar percentage={stats.percentage} />
                   <div className={`text-xs mt-1.5 ${isDanger ? 'text-red-600 font-medium' : 'text-gray-500'}`}>
                     {isDanger
-                      ? `At risk — only ${sMisses} classes (${stats.budgetHours}h) left to miss`
-                      : `${sMisses} classes (${stats.budgetHours}h) left to miss`}
+                      ? `At risk — only ${sMissesLabel} classes (${stats.budgetHours}h) left to miss`
+                      : `${sMissesLabel} classes (${stats.budgetHours}h) left to miss`}
                   </div>
                 </div>
               </div>

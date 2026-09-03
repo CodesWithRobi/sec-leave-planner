@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import type { SlotDetail, DateOverride, LeaveRange, HolidayWindow } from '../engine/types'
-import { findVacationWindows, computeLeavePlanImpact } from '../engine/attendance'
+import { findVacationWindows, computeLeavePlanImpact, formatCount } from '../engine/attendance'
 
 const MAX_PLAN_RANGES = 5
 
@@ -272,7 +272,7 @@ export default function TripPlanner({ slots, overrides, holidays, holidayWindows
                             </span>
                             {!isActivity && (
                               <span className="text-gray-400 w-28 text-right">
-                                budget {data.remainingBudgetSessions} classes ({data.remainingBudget}h)
+                                budget {formatCount(data.remainingBudgetSessions)} classes ({data.remainingBudget}h)
                               </span>
                             )}
                           </div>

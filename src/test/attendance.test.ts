@@ -108,11 +108,10 @@ describe('computeSlotStats', () => {
     expect(stats.zone).toBe('red')
   })
 
-  it('budget reports whole classes only, not fractional hours', () => {
+  it('budget stays fractional (continuous hours), not floored to whole classes', () => {
     // 2h classes: 11 present, 1 absent, 2 upcoming.
     // Continuous budget = 22 + 4 - 0.8(24 + 4) = 3.6h.
-    // That covers only ONE whole 2h class, so must show 1 class (2h),
-    // never "2 classes (3.6h)".
+    // Must show the fractional value: 3.6h / 1.8 classes, never a flooed whole.
     const sessions: Session[] = [
       ...Array.from({ length: 11 }, (_, i) =>
         makeSession(1, `2026-08-${String(1 + i * 3).padStart(2, '0')}`, '10:00 - 11:59', 'PRESENT', 2)),
@@ -126,11 +125,8 @@ describe('computeSlotStats', () => {
       stats: { presentHours: 0, totalHours: 0, percentage: 0 },
     }
     const stats = computeSlotStats(sd, new Set())
-    // Continuous budget 3.6h -> only 1 whole 2h class skippable
-    expect(stats.budgetSessions).toBe(1)
-    // Hours derive from the whole-class count, so the pair always reconciles
-    expect(stats.budgetHours).toBe(2)
-    expect(stats.budgetHours).toBeCloseTo(stats.budgetSessions * 2, 1)
+    expect(stats.budgetHours).toBeCloseTo(3.6, 1)   // continuous, kept fractional
+    expect(stats.budgetSessions).toBeCloseTo(1.8, 1) // derived label, fractional
   })
 })
 
@@ -150,16 +146,14 @@ describe('computeOverallStats', () => {
     expect(stats.percentage).toBeCloseTo(82.98, 0)
   })
 
-  it('courses-only budget: whole classes only, no circular discount', () => {
+  it('courses-only budget: continuous hours, no circular discount', () => {
     const stats = computeOverallStats(ALL_SLOTS, HOLIDAYS, true)
     // remaining = JAVA 22 + MA212 26 + HRM 20 + AOA 28 = 96h across 48 sessions (2h each)
     // maxMiss = 126 + 96 - 0.8(150 + 96) = 25.2h continuous
-    // Whole 2h classes you can miss: floor(25.2 / 2) = 12 classes
-    // budgetHours derives from the count so "12 classes (24h)" reconciles.
+    // Budgeted hours stay fractional; class label = 25.2 / 2 = 12.6
     expect(stats.remainingHours).toBeCloseTo(96, 1)
-    expect(stats.budgetSessions).toBe(12)
-    expect(stats.budgetHours).toBe(24)
-    expect(stats.budgetHours).toBeCloseTo(stats.budgetSessions * 2, 1)
+    expect(stats.budgetHours).toBeCloseTo(25.2, 1)
+    expect(stats.budgetSessions).toBeCloseTo(12.6, 1)
   })
 })
 
