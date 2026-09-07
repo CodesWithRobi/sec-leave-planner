@@ -131,14 +131,21 @@ export function sessionHours(s: Session): number {
   return (spanHoursOf(s) ?? timingHoursOf(s) ?? 2)
 }
 
-/** Filter sessions: exclude HOLIDAY and UPCOMING, keep PRESENT/ABSENT */
-export function conductedSessions(sessions: Session[]): Session[] {
-  return sessions.filter(s => s.status === 'PRESENT' || s.status === 'ABSENT')
+/** Filter sessions: exclude HOLIDAY status AND sessions on holiday dates,
+ *  exclude UPCOMING, keep PRESENT/ABSENT */
+export function conductedSessions(sessions: Session[], holidays: Set<string> = new Set()): Session[] {
+  return sessions.filter(s => {
+    if (s.status !== 'PRESENT' && s.status !== 'ABSENT') return false
+    return !holidays.has(parseSessionDate(s.date))
+  })
 }
 
-/** Filter sessions: only PRESENT */
-export function presentSessions(sessions: Session[]): Session[] {
-  return sessions.filter(s => s.status === 'PRESENT')
+/** Filter sessions: only PRESENT, also excluding holiday dates */
+export function presentSessions(sessions: Session[], holidays: Set<string> = new Set()): Session[] {
+  return sessions.filter(s => {
+    if (s.status !== 'PRESENT') return false
+    return !holidays.has(parseSessionDate(s.date))
+  })
 }
 
 const KNOWN_STATUSES: ReadonlySet<string> = new Set(['PRESENT', 'ABSENT', 'HOLIDAY', 'UPCOMING'])
@@ -177,8 +184,8 @@ export function upcomingSessions(sessions: Session[], holidays: Set<string>, win
 
 /** Compute stats for one slot */
 export function computeSlotStats(slotDetail: SlotDetail, holidays: Set<string>, windows: HolidayWindow[] = []): ComputedStats {
-  const conducted = conductedSessions(slotDetail.sessions)
-  const present = presentSessions(slotDetail.sessions)
+  const conducted = conductedSessions(slotDetail.sessions, holidays)
+  const present = presentSessions(slotDetail.sessions, holidays)
   const future = upcomingSessions(slotDetail.sessions, holidays, windows)
 
   const presentHours = present.reduce((sum, s) => sum + sessionHours(s), 0)
@@ -228,8 +235,8 @@ export function computeOverallStats(
   let remainingCount = 0
 
   for (const sd of filtered) {
-    const conducted = conductedSessions(sd.sessions)
-    const present = presentSessions(sd.sessions)
+    const conducted = conductedSessions(sd.sessions, holidays)
+    const present = presentSessions(sd.sessions, holidays)
     const future = upcomingSessions(sd.sessions, holidays, windows)
 
     presentHours += present.reduce((sum, s) => sum + sessionHours(s), 0)
